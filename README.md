@@ -186,6 +186,7 @@ Analyze external CAG traffic:
 
 ```bash
 node bin/cmcc-cloud-alive.js analyze-cag /path/to/cag.pcap --limit 80
+node bin/cmcc-cloud-alive.js extract-cag-tunnel-flow /path/to/cag.pcap --from SEC.USEC --to SEC.USEC
 ```
 
 Analyze local loopback SPICE traffic:

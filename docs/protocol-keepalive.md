@@ -658,6 +658,26 @@ transport layer: `0x81` data, short `0x82` controls, `0x85` batch/retransmit,
 `0x86` ACK, and `0x89` client control. The parser now handles short 22-byte
 `0x82` tunnel controls without misclassifying them as UDP control datagrams.
 
+`extract-cag-tunnel-flow` now produces a focused JSON summary for this boundary.
+Across the two current official Linux captures, the first post-ready tunnel
+records agree on the same shape:
+
+```text
+client->cag data: word4=0x00000005, word5=0x02000000, TLS ClientHello at payload offset 0
+cag->client control: 22-byte 0x82 control for that sequence
+cag->client data: TLS ServerHello at payload offset 0, followed by TLS application data at offset 135
+client->cag 0x82 control with a TLS ChangeCipherSpec/ApplicationData payload
+client->cag data: TLS application data records
+client->cag 0x86 ACK packets with sequence16=0x0100 and observed ack values 232, 205, 64, 121, ...
+client->cag 0x89 client_control packets with word4 matching payload length
+```
+
+The project can now encode the observed tunnel packet families offline:
+`encodeZteCagDataDatagram`, `encodeZteCagShortControlDatagram`,
+`encodeZteCagAckDatagram`, and `encodeZteCagClientControlDatagram`. These are
+byte-for-byte tested against captured packet fragments, but they are not yet
+used as live keepalive success.
+
 ## Implemented
 
 - `lib/protocol/events.js`: protocol-stage event model and DISPLAY_INIT-level success predicate.
@@ -669,6 +689,7 @@ transport layer: `0x81` data, short `0x82` controls, `0x85` batch/retransmit,
 - `lib/protocol/zte-cag.js`: observed ZTE CAG UDP `ZTEC`/control/tunnel/TLS-record detector, 21-byte UDP control wrapper encoder/parser, 24-byte tunnel header encoder/parser, 0x2c local-key codec, and opentelemetry 0xac local-key codec verified against captured traffic.
 - `lib/protocol/zte-cag.js`: RADIUS connect-info body parser/encoder, CAG credential AES helper, and password XOR helper verified offline against captured non-sensitive fields.
 - `lib/protocol/zte-cag.js`: conservative tunnel datagram parser and sequence summarizer for observed `0x81/0x82/0x85/0x86/0x87/0x89` packet families, including dynamic tunnel magic values such as `34db0787`.
+- `lib/protocol/zte-cag.js`: tunnel datagram encoders for observed data, short-control, ACK, and client-control packet families, verified offline against captured fragments.
 - `lib/protocol/zte-cag.js`: UDP control semantic parser for observed `local_key`, `server_key`, `connect_info`, and `connect_reply`, including extraction of dynamic `tunnelId`, server key, AES flags, and connect reply code `200`.
 - `lib/protocol/cag-udp-handshake.js`: native UDP sender for `local_key -> server_key` and explicit `--send-connect-info 1` continuation through `connect_reply 200`, with redacted reports and partial-report timeout diagnostics.
 - `lib/protocol/chuanyun.js`: 24-byte ChuanyunHead frame codec.
@@ -677,6 +698,7 @@ transport layer: `0x81` data, short `0x82` controls, `0x85` batch/retransmit,
 - `scripts/analyze-loopback-spice.js`: loopback pcap analyzer that emits `protocolSuccessEvidence=true` when display `DISPLAY_INIT`, `SET_ACK`, `SURFACE_CREATE`, and `MARK` are all observed.
 - `scripts/analyze-loopback-spice.js`: per-event pcap timestamps for local display success signals, used to correlate loopback plaintext with external CAG tunnel packets.
 - `scripts/analyze-cag-transport.js`: CAG pcap analyzer that emits TCP/UDP event summaries, ZTEC control packets, dynamic tunnel headers, packet families, TLS-record hints, tunnel counts, and optional `--from/--to` time-window filtering.
+- `scripts/extract-cag-tunnel-flow.js`: focused CAG/ZIME flow extractor for first TLS records, data runs, short-control tails, ACK values, and client-control payload lengths.
 - `lib/protocol/connect-info.js`: normalized protocol connect info from `getFirmAuth`.
 - `cmcc-cloud-alive protocol-probe`: fetches SOHO `getFirmAuth`, classifies the returned transport route, optionally probes CAG TCP TLS, and redacts credentials in the report.
 - `cmcc-cloud-alive cag-handshake`: fetches real auth data and performs the verified native CAG UDP control handshake without SDK startup.

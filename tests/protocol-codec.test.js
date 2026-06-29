@@ -54,7 +54,11 @@ const {
   encodePong,
   encodeSpiceLinkHeader,
   encodeSpiceLinkMess,
+  encodeZteCagAckDatagram,
+  encodeZteCagClientControlDatagram,
+  encodeZteCagDataDatagram,
   encodeZteCagTunnelHeader,
+  encodeZteCagShortControlDatagram,
   encodeZteCagRadiusConnectInfoBody,
   encodeZteCagOpentelemetryLocalKeyPacket,
   encodeZteCagLocalKeyPacket,
@@ -81,6 +85,7 @@ const {
   routeIdFromRandomKey,
   zteCagConnectInfoLength,
   zteCagPasswordBlockLength,
+  zteCagTunnelWord1,
 } = require('../lib/protocol');
 
 const connectInfo = normalizeProtocolConnectInfo({
@@ -228,6 +233,17 @@ assert.strictEqual(zteTunnelDatagram.tunnel.payloadLengthMatchesWord4, false);
 assert.strictEqual(zteTunnelDatagram.tunnel.tlsRecordOffset, 0);
 assert.strictEqual(zteTunnelDatagram.tlsRecord.subarray(0, 5).toString('hex'), '1603010200');
 assert.strictEqual(encodeZteCagTunnelHeader(zteTunnelDatagram.tunnelHeader).toString('hex'), 'e1db878d8100015000000000000000000000000502000000');
+assert.strictEqual(zteCagTunnelWord1(ZteCagTunnelType.DATA, 0, 0x0150), 0x81000150);
+assert.strictEqual(encodeZteCagDataDatagram({
+  word0: 0xe1db878d,
+  flagByte: 0,
+  sequence16: 0x0150,
+  word2: 0,
+  word3: 0,
+  word4: 5,
+  word5: 0x02000000,
+  payload: Buffer.from('160301020000010001fc03039f152d897da44b', 'hex'),
+}).toString('hex'), 'e1db878d8100015000000000000000000000000502000000160301020000010001fc03039f152d897da44b');
 
 const dynamicMagicTunnel = parseZteCagDatagram(Buffer.from(
   '34db078781000160000000000000000000000005020000001603010200',
@@ -250,6 +266,11 @@ assert.strictEqual(observedAckTunnel.payloadLengthMatchesWord4, true);
 const observedAckMeta = deriveZteCagTunnelMeta(observedAckTunnel);
 assert.strictEqual(observedAckMeta.ackValue, 0xe8);
 assert.strictEqual(observedAckMeta.ackValueHex, '0x000000e8');
+assert.strictEqual(encodeZteCagAckDatagram({
+  word0: 0xe1db878d,
+  ackValue: 0xe8,
+  word3: 0x03000002,
+}).toString('hex'), 'e1db878d86000100000000e8030000020000000000000000');
 
 const observedShortControlTunnel = parseZteCagDatagram(Buffer.from(
   '34db0787820001600000000000000000000000000100',
@@ -264,6 +285,12 @@ assert.strictEqual(observedShortControlTunnel.tunnel.header.sequence16, 0x0160);
 const observedShortControlMeta = deriveZteCagTunnelMeta(observedShortControlTunnel.tunnel);
 assert.strictEqual(observedShortControlMeta.short, true);
 assert.strictEqual(observedShortControlMeta.shortTailHex, '0100');
+assert.strictEqual(encodeZteCagShortControlDatagram({
+  word0: 0x34db0787,
+  flagByte: 0,
+  sequence16: 0x0160,
+  tail: Buffer.from('0100', 'hex'),
+}).toString('hex'), '34db0787820001600000000000000000000000000100');
 
 const observedClientControlTunnel = parseZteCagTunnelDatagram(Buffer.from(
   'e1db878d89000000000000000000000000000022000000000400000000000000000000019f14392b240400000000000100000002001a0003001e',
@@ -273,6 +300,12 @@ assert.strictEqual(observedClientControlTunnel.header.packetType, ZteCagTunnelTy
 assert.strictEqual(observedClientControlTunnel.header.packetTypeName, 'client_control');
 assert.strictEqual(observedClientControlTunnel.payloadLength, 34);
 assert.strictEqual(observedClientControlTunnel.payloadLengthMatchesWord4, true);
+assert.strictEqual(encodeZteCagClientControlDatagram({
+  word0: 0xe1db878d,
+  sequence16: 0,
+  word4: 34,
+  payload: Buffer.from('0400000000000000000000019f14392b240400000000000100000002001a0003001e', 'hex'),
+}).toString('hex'), 'e1db878d89000000000000000000000000000022000000000400000000000000000000019f14392b240400000000000100000002001a0003001e');
 assert.deepStrictEqual(summarizeZteCagTunnelDatagrams([
   { direction: 'C>S', payload: Buffer.from('e1db878d81000150000000000000000000000005020000001603010200010001fc03039f152d897da44b', 'hex') },
   { direction: 'C>S', payload: Buffer.from('e1db878d86000100000000e8030000020000000000000000', 'hex') },
