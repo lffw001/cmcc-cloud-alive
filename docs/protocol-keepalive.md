@@ -152,6 +152,40 @@ The Docker path used a read-only legacy state bind mount for verification only;
 normal container use should log in through `sms-send` and `sms-login` into the
 named state volume.
 
+The `verify-http` command now turns this into a repeatable evidence report:
+
+```bash
+sudo node bin/cmcc-cloud-alive.js verify-http 2663816 \
+  --duration-ms 15000 --interval-ms 5000
+```
+
+Observed on 2026-06-30:
+
+```json
+{
+  "acceptedCount": 3,
+  "errorCount": 0,
+  "stoppedByOtherLogin": false,
+  "officialProcessesBefore": [],
+  "officialProcessesAfter": [],
+  "cagConnectionsBefore": [],
+  "cagConnectionsAfter": [],
+  "tcpdump": {
+    "packetLines": [],
+    "stderr": "0 packets captured"
+  },
+  "noOfficialClientStarted": true,
+  "noCagConnectionObserved": true,
+  "ok": true
+}
+```
+
+This evidence proves the short-run HTTP heartbeat path is not the old SDK
+wrapper and does not occupy the observed Linux CAG/ZIME route. It still does
+not prove the final keepalive requirement by itself, because the remaining
+claim is behavioral: the VM must stay awake beyond the normal idle window and
+the normal official client must not be kicked during concurrent use.
+
 ## Upstream Repository Audit
 
 The repository at `https://github.com/gjz518/yidongyun` was reviewed on 2026-06-30:

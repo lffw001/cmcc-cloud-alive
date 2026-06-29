@@ -86,6 +86,14 @@ Run it continuously:
 node bin/cmcc-cloud-alive.js heartbeat-loop <userServiceId> --interval-ms 30000
 ```
 
+Generate a short verification report that checks heartbeat responses, official
+client processes, and CAG `8899` traffic:
+
+```bash
+sudo node bin/cmcc-cloud-alive.js verify-http <userServiceId> \
+  --duration-ms 120000 --interval-ms 30000
+```
+
 The heartbeat command is aligned to the family Linux client source: `4043`
 (`YUN_OTHER_LOGIN`) is treated as a hard stop, while other JSON business codes
 are recorded and the loop continues, matching the client heartbeat scheduler.

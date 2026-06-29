@@ -25,6 +25,7 @@ function usage() {
   cmcc-cloud-alive list-cache
   cmcc-cloud-alive heartbeat <userServiceId>
   cmcc-cloud-alive heartbeat-loop <userServiceId> [--interval-ms 30000] [--stop-on-error 0]
+  cmcc-cloud-alive verify-http <userServiceId> [--duration-ms 120000] [--interval-ms 30000]
   cmcc-cloud-alive token-check
   cmcc-cloud-alive import-legacy-state
   cmcc-cloud-alive state
@@ -196,6 +197,7 @@ async function main(argv = process.argv.slice(2)) {
   }
   if (cmd === 'analyze-cag') return runNodeScript('analyze-cag-transport.js', args);
   if (cmd === 'analyze-loopback') return runNodeScript('analyze-loopback-spice.js', args);
+  if (cmd === 'verify-http') return runNodeScript('verify-http-heartbeat.js', args);
   if (cmd === 'test') return runNodeScript('../tests/protocol-codec.test.js', []);
   usage();
   process.exit(2);
