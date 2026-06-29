@@ -145,12 +145,15 @@ Probe the native CAG UDP control handshake:
 
 ```bash
 node bin/cmcc-cloud-alive.js cag-handshake <userServiceId>
+node bin/cmcc-cloud-alive.js cag-handshake <userServiceId> --send-preflight 1
 node bin/cmcc-cloud-alive.js cag-handshake <userServiceId> --send-connect-info 1
 ```
 
 The first command sends only `local_key` and waits for `server_key`. The second
-continues through `connect_info` and expects `connect_reply code=200`. It still
-does not implement the ZIME tunnel or DISPLAY_INIT-level keepalive.
+preflight command sends the observed 26-byte CAG probe and records the 14-byte
+echo when CAG accepts the probe tail. The third continues through `connect_info` and expects
+`connect_reply code=200`. It still does not implement the ZIME tunnel or
+DISPLAY_INIT-level keepalive.
 
 Use this as the final proof gate after the VM is already powered/running:
 

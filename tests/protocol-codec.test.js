@@ -24,6 +24,7 @@ const {
   decodeZteCagRadiusConnectInfoBody,
   decodeZteCagServerKeyPacket,
   deriveZteCagAesMaterial,
+  deriveZteCagReadyPlanFromConnectReply,
   deriveZteCagTunnelMeta,
   decodeChuanyunFrame,
   decodeChuanyunHead,
@@ -65,6 +66,7 @@ const {
   encodeZteCagPacket,
   encodeZteCagUdpControlDatagram,
   encodeZteCagUdpControlHeader,
+  encodeZteCagPreflightProbeDatagram,
   isProtocolKeepaliveSuccess,
   looksLikeZteCagPreflightDatagram,
   looksLikeZteCagTunnelDatagram,
@@ -214,6 +216,35 @@ assert.strictEqual(cagPreflight.echoTailHex, '00001a1da6040000000033b2151d');
 const cagPreflightEcho = parseZteCagPreflightDatagram(Buffer.from('00001a1da6040000000033b2151d', 'hex'));
 assert.strictEqual(cagPreflightEcho.directionHint, 'cag_echo');
 assert.strictEqual(cagPreflightEcho.echoTailHex, '00001a1da6040000000033b2151d');
+assert.strictEqual(encodeZteCagPreflightProbeDatagram({
+  probeBody: '7c020a0a2e27',
+  echoTail: '00001a1da6040000000033b2151d',
+}).toString('hex'), '5a54454306007c020a0a2e2700001a1da6040000000033b2151d');
+assert.deepStrictEqual(deriveZteCagReadyPlanFromConnectReply(
+  'c8000000010000000d020a0aff3e16fa0000000000000000000000000000000000000000'
+), {
+  known: true,
+  source: 'observed_connect_reply_marker',
+  marker: 0x0d,
+  markerHex: '0x0d',
+  readyControlWord: 0x1405,
+  clientReadySequence: 0x53230033,
+  expectedServerPeerReadySequence: 0x20430033,
+  peerConfirmSequence: 0x20430018,
+});
+assert.deepStrictEqual(deriveZteCagReadyPlanFromConnectReply(
+  'c8000000010000000e020a0aff3e16fa0000000000000000000000000000000000000000'
+), {
+  known: true,
+  source: 'observed_connect_reply_marker',
+  marker: 0x0e,
+  markerHex: '0x0e',
+  readyControlWord: 0x1405,
+  clientReadySequence: 0x53230046,
+  expectedServerPeerReadySequence: 0x20430046,
+  peerConfirmSequence: 0x20430013,
+});
+assert.strictEqual(deriveZteCagReadyPlanFromConnectReply('c800000001000000ff').known, false);
 
 const zteTunnelDatagram = parseZteCagDatagram(Buffer.from(
   'e1db878d81000150000000000000000000000005020000001603010200010001fc03039f152d897da44b',

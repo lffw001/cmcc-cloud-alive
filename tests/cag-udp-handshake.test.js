@@ -6,6 +6,7 @@ const {
   encodeZteCagPacket,
   encodeZteCagUdpControlDatagram,
   parseZteCagDatagram,
+  parseZteCagPreflightDatagram,
   runCagUdpHandshake,
 } = require('../lib/protocol');
 
@@ -44,6 +45,7 @@ function serverKeyDatagram(routeId, tunnelId, serverKey) {
 function connectReplyDatagram(routeId, tunnelId) {
   const payload = Buffer.alloc(0x24);
   payload.writeUInt32LE(200, 0);
+  payload.writeUInt8(0x0e, 8);
   return encodeZteCagUdpControlDatagram({
     type: 0x09,
     sequence: 0,
@@ -63,6 +65,17 @@ async function main() {
   server.on('message', async (message, remote) => {
     const parsed = parseZteCagDatagram(message);
     const control = parsed.udpControl;
+    if (!control) {
+      try {
+        const preflight = parseZteCagPreflightDatagram(message);
+        if (preflight.directionHint === 'client_probe') {
+          await sendUdp(server, preflight.echoTail, remote.port, remote.address);
+        }
+      } catch (_) {
+        // Ignore non-CAG test traffic.
+      }
+      return;
+    }
     if (!control) return;
     receivedTypes.push(control.header.type);
     if (control.header.type === 0x06) {
@@ -111,6 +124,9 @@ async function main() {
       clientKey: '1cf70100b39cdc40894d7064b782e88b',
       traceId: 'bb0ff3ff89ba0d0f0ca7d033a5f8b522',
       spanId: '100390b5139e6c89',
+      sendPreflight: true,
+      preflightProbeBody: '80020a0a1027',
+      preflightEchoTail: '00005723160500000000f9445123',
       sendConnectInfo: true,
       sendReady: true,
       timeoutMs: 1000,
@@ -119,6 +135,9 @@ async function main() {
     await wait(20);
     assert.deepStrictEqual(receivedTypes, [0x06, 0x08, 0x01, 0x02]);
     assert.strictEqual(report.serverKey.typeName, 'server_key');
+    assert.strictEqual(report.preflight.echo.typeName, 'preflight_echo');
+    assert.strictEqual(report.preflight.echo.echoTailHex, '00005723160500000000f9445123');
+    assert.strictEqual(report.readyPlan.clientReadySequence, 0x53230046);
     assert.strictEqual(report.serverKey.serverKeyHex, '0x4f21c3da');
     assert.strictEqual(report.connectReply.connectReply.ok, true);
     assert.strictEqual(report.peerReady.typeName, 'peer_ready');

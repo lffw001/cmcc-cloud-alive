@@ -625,6 +625,19 @@ the capture shows it continues periodically after the main handshake, so it is
 currently treated as connectivity/NAT evidence rather than proof of a missing
 auth step.
 
+The native sender can now optionally perform this preflight with
+`cag-handshake --send-preflight 1`; it uses a separate UDP socket and records
+the echo hash/tail in the report. The ready control sequences are no longer
+hardcoded to one capture: they are derived from the observed `connect_reply`
+marker (`0x0d -> 0x53230033/0x20430018`,
+`0x0e -> 0x53230046/0x20430013`). Unknown markers fail closed unless explicit
+ready sequence overrides are supplied.
+
+Live probing on the current powered-off account later returned marker `0x0f`.
+That marker is intentionally reported as `known=false`; no ready packet is sent
+from an extrapolated sequence. This preserves the "capture first, send second"
+rule for account safety.
+
 Time-window analysis around the synchronized display success window shows the
 external CAG/ZIME packet families active during the local SPICE events:
 
@@ -692,6 +705,7 @@ used as live keepalive success.
 - `lib/protocol/zte-cag.js`: tunnel datagram encoders for observed data, short-control, ACK, and client-control packet families, verified offline against captured fragments.
 - `lib/protocol/zte-cag.js`: UDP control semantic parser for observed `local_key`, `server_key`, `connect_info`, and `connect_reply`, including extraction of dynamic `tunnelId`, server key, AES flags, and connect reply code `200`.
 - `lib/protocol/cag-udp-handshake.js`: native UDP sender for `local_key -> server_key` and explicit `--send-connect-info 1` continuation through `connect_reply 200`, with redacted reports and partial-report timeout diagnostics.
+- `lib/protocol/cag-udp-handshake.js`: optional CAG preflight sender and observed `connect_reply`-based ready-sequence planner; ready/ZIME sending remains explicit and fail-closed.
 - `lib/protocol/chuanyun.js`: 24-byte ChuanyunHead frame codec.
 - `lib/protocol/spice.js`: SPICE constants, REDQ link header/request/reply codecs including dynamic DER public-key length, Mini Header codec, full data header codec, DISPLAY_INIT encoder, SET_ACK parser, and ACK/PONG encoders.
 - `lib/protocol/local-spice.js`: Linux local GSpice/proxy ExtInfo parser, client `0x0a channel length` frame parser, local prefixed REDQ server reply parser, and padded server full-data-message parser, verified against sanitized loopback capture fragments.
