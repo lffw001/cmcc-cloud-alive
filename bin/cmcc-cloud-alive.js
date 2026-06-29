@@ -31,8 +31,8 @@ function usage() {
   cmcc-cloud-alive cloud-status [userServiceId]
   cmcc-cloud-alive firm-auth <userServiceId>
   cmcc-cloud-alive protocol-probe <userServiceId> [--tls-probe 1] [--timeout-ms 5000]
-  cmcc-cloud-alive cag-plan <userServiceId> [--random-key HEX] [--server-key HEX] [--tunnel-id HEX] [--local-key-sequence N] [--connect-info-sequence N] [--connect-info-control-word N] [--show-hex 0]
-  cmcc-cloud-alive cag-handshake <userServiceId> [--send-preflight 0] [--send-connect-info 0] [--send-ready 0] [--timeout-ms 5000]
+  cmcc-cloud-alive cag-plan <userServiceId> [--random-key HEX] [--server-key HEX] [--tunnel-id HEX] [--local-key-sequence N] [--connect-info-sequence N] [--connect-info-control-word N] [--base-flags N] [--transport-flag N] [--address-family-flag N] [--show-hex 0]
+  cmcc-cloud-alive cag-handshake <userServiceId> [--send-preflight 0] [--send-connect-info 0] [--send-ready 0] [--timeout-ms 5000] [--base-flags N] [--transport-flag N] [--address-family-flag N]
   cmcc-cloud-alive heartbeat <userServiceId>
   cmcc-cloud-alive heartbeat-loop <userServiceId> [--interval-ms 30000] [--stop-on-error 0]
   cmcc-cloud-alive verify-http <userServiceId> [--duration-ms 120000] [--interval-ms 30000] [--wait-powered-ms 0] [--require-sleep-proof 0]
@@ -188,6 +188,9 @@ async function main(argv = process.argv.slice(2)) {
       traceId: readOption(args, '--trace-id', undefined),
       spanId: readOption(args, '--span-id', undefined),
       localKeySequence: readOption(args, '--local-key-sequence', undefined),
+      baseFlags: readOption(args, '--base-flags', undefined),
+      transportFlag: readOption(args, '--transport-flag', undefined),
+      addressFamilyFlag: readOption(args, '--address-family-flag', undefined),
       serverKey: readOption(args, '--server-key', undefined),
       tunnelId: readOption(args, '--tunnel-id', undefined),
       connectInfoSequence: readOption(args, '--connect-info-sequence', undefined),
@@ -212,6 +215,9 @@ async function main(argv = process.argv.slice(2)) {
       traceId: readOption(args, '--trace-id', undefined),
       spanId: readOption(args, '--span-id', undefined),
       localKeySequence: readOption(args, '--local-key-sequence', undefined),
+      baseFlags: readOption(args, '--base-flags', undefined),
+      transportFlag: readOption(args, '--transport-flag', undefined),
+      addressFamilyFlag: readOption(args, '--address-family-flag', undefined),
       sendPreflight: readOption(args, '--send-preflight', '0'),
       requirePreflight: readOption(args, '--require-preflight', '0'),
       preflightProbeBody: readOption(args, '--preflight-probe-body', undefined),

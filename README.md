@@ -155,6 +155,11 @@ echo when CAG accepts the probe tail. The third continues through `connect_info`
 `connect_reply code=200`. It still does not implement the ZIME tunnel or
 DISPLAY_INIT-level keepalive.
 
+`--send-ready 1` is intentionally fail-closed. Current captures show that the
+post-`connect_reply` ready sequences are not determined by the marker byte
+alone. Use explicit `--client-ready-sequence` and `--peer-confirm-sequence`
+only while comparing against a fresh official-client research capture.
+
 Use this as the final proof gate after the VM is already powered/running:
 
 ```bash
@@ -197,6 +202,16 @@ Analyze local loopback SPICE traffic:
 ```bash
 node bin/cmcc-cloud-alive.js analyze-loopback /path/to/loopback.pcap
 ```
+
+Capture a short official SDK run for protocol research only:
+
+```bash
+sudo scripts/capture-official-cag-research.sh <userServiceId> 20
+node bin/cmcc-cloud-alive.js extract-cag-handshake /tmp/cmcc-cloud-alive-research-cag-YYYYmmdd-HHMMSS.pcap
+```
+
+This helper starts the legacy `yidongyun` SDK wrapper briefly as an oracle and
+then stops it. It is not used by the protocol implementation or Docker runtime.
 
 ## Docker
 

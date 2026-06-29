@@ -627,16 +627,27 @@ auth step.
 
 The native sender can now optionally perform this preflight with
 `cag-handshake --send-preflight 1`; it uses a separate UDP socket and records
-the echo hash/tail in the report. The ready control sequences are no longer
-hardcoded to one capture: they are derived from the observed `connect_reply`
-marker (`0x0d -> 0x53230033/0x20430018`,
-`0x0e -> 0x53230046/0x20430013`). Unknown markers fail closed unless explicit
-ready sequence overrides are supplied.
+the echo hash/tail in the report.
 
-Live probing on the current powered-off account later returned marker `0x0f`.
-That marker is intentionally reported as `known=false`; no ready packet is sent
-from an extrapolated sequence. This preserves the "capture first, send second"
-rule for account safety.
+New capture evidence invalidated the earlier marker-only ready mapping. Two
+official Linux captures with the same `connect_reply` marker `0x0d` produced
+different ready sequences:
+
+```text
+marker=0x0d client_ready=0x53230033 peer_confirm=0x20430018
+marker=0x0d client_ready=0x53230032 peer_confirm=0x20430017
+marker=0x0e client_ready=0x53230046 peer_confirm=0x20430013
+```
+
+The encoder reproduces those 21-byte official ready packets byte-for-byte, but
+live pure-protocol attempts still time out waiting for `peer_ready`. Therefore
+`deriveZteCagReadyPlanFromConnectReply` now reports these as observed
+candidates only and always returns `known=false`. `--send-ready 1` requires
+explicit `--client-ready-sequence` and `--peer-confirm-sequence` overrides.
+This preserves the "capture first, send second" rule for account safety.
+
+Live probing on the current powered-off account also returned marker `0x0f`.
+No ready packet is sent from an extrapolated sequence.
 
 Time-window analysis around the synchronized display success window shows the
 external CAG/ZIME packet families active during the local SPICE events:
@@ -705,7 +716,8 @@ used as live keepalive success.
 - `lib/protocol/zte-cag.js`: tunnel datagram encoders for observed data, short-control, ACK, and client-control packet families, verified offline against captured fragments.
 - `lib/protocol/zte-cag.js`: UDP control semantic parser for observed `local_key`, `server_key`, `connect_info`, and `connect_reply`, including extraction of dynamic `tunnelId`, server key, AES flags, and connect reply code `200`.
 - `lib/protocol/cag-udp-handshake.js`: native UDP sender for `local_key -> server_key` and explicit `--send-connect-info 1` continuation through `connect_reply 200`, with redacted reports and partial-report timeout diagnostics.
-- `lib/protocol/cag-udp-handshake.js`: optional CAG preflight sender and observed `connect_reply`-based ready-sequence planner; ready/ZIME sending remains explicit and fail-closed.
+- `lib/protocol/cag-udp-handshake.js`: optional CAG preflight sender and fail-closed ready candidate reporting; ready/ZIME sending requires explicit research overrides.
+- `scripts/capture-official-cag-research.sh`: research-only helper that briefly starts the legacy SDK wrapper and tcpdump to collect official CAG samples for protocol comparison.
 - `lib/protocol/chuanyun.js`: 24-byte ChuanyunHead frame codec.
 - `lib/protocol/spice.js`: SPICE constants, REDQ link header/request/reply codecs including dynamic DER public-key length, Mini Header codec, full data header codec, DISPLAY_INIT encoder, SET_ACK parser, and ACK/PONG encoders.
 - `lib/protocol/local-spice.js`: Linux local GSpice/proxy ExtInfo parser, client `0x0a channel length` frame parser, local prefixed REDQ server reply parser, and padded server full-data-message parser, verified against sanitized loopback capture fragments.

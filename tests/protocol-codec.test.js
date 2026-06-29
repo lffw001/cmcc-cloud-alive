@@ -223,26 +223,42 @@ assert.strictEqual(encodeZteCagPreflightProbeDatagram({
 assert.deepStrictEqual(deriveZteCagReadyPlanFromConnectReply(
   'c8000000010000000d020a0aff3e16fa0000000000000000000000000000000000000000'
 ), {
-  known: true,
-  source: 'observed_connect_reply_marker',
+  known: false,
+  source: 'observed_marker_has_multiple_or_unproven_ready_candidates',
   marker: 0x0d,
   markerHex: '0x0d',
   readyControlWord: 0x1405,
-  clientReadySequence: 0x53230033,
-  expectedServerPeerReadySequence: 0x20430033,
-  peerConfirmSequence: 0x20430018,
+  observedCandidates: [
+    {
+      source: 'capture:/tmp/yidongyun-cag-8899.pcap',
+      clientReadySequence: 0x53230033,
+      expectedServerPeerReadySequence: 0x20430033,
+      peerConfirmSequence: 0x20430018,
+    },
+    {
+      source: 'capture:/tmp/cmcc-cloud-alive-research-cag-20260630-065958.pcap',
+      clientReadySequence: 0x53230032,
+      expectedServerPeerReadySequence: 0x20430032,
+      peerConfirmSequence: 0x20430017,
+    },
+  ],
 });
 assert.deepStrictEqual(deriveZteCagReadyPlanFromConnectReply(
   'c8000000010000000e020a0aff3e16fa0000000000000000000000000000000000000000'
 ), {
-  known: true,
-  source: 'observed_connect_reply_marker',
+  known: false,
+  source: 'observed_marker_has_multiple_or_unproven_ready_candidates',
   marker: 0x0e,
   markerHex: '0x0e',
   readyControlWord: 0x1405,
-  clientReadySequence: 0x53230046,
-  expectedServerPeerReadySequence: 0x20430046,
-  peerConfirmSequence: 0x20430013,
+  observedCandidates: [
+    {
+      source: 'capture:/tmp/yidongyun-sync-cag-20260630-023415.pcap',
+      clientReadySequence: 0x53230046,
+      expectedServerPeerReadySequence: 0x20430046,
+      peerConfirmSequence: 0x20430013,
+    },
+  ],
 });
 assert.strictEqual(deriveZteCagReadyPlanFromConnectReply('c800000001000000ff').known, false);
 

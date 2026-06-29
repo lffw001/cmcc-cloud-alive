@@ -129,6 +129,8 @@ async function main() {
       preflightEchoTail: '00005723160500000000f9445123',
       sendConnectInfo: true,
       sendReady: true,
+      clientReadySequence: 0x53230046,
+      peerConfirmSequence: 0x20430013,
       timeoutMs: 1000,
     });
 
@@ -137,7 +139,8 @@ async function main() {
     assert.strictEqual(report.serverKey.typeName, 'server_key');
     assert.strictEqual(report.preflight.echo.typeName, 'preflight_echo');
     assert.strictEqual(report.preflight.echo.echoTailHex, '00005723160500000000f9445123');
-    assert.strictEqual(report.readyPlan.clientReadySequence, 0x53230046);
+    assert.strictEqual(report.readyPlan.known, false);
+    assert.strictEqual(report.readyPlan.observedCandidates[0].clientReadySequence, 0x53230046);
     assert.strictEqual(report.serverKey.serverKeyHex, '0x4f21c3da');
     assert.strictEqual(report.connectReply.connectReply.ok, true);
     assert.strictEqual(report.peerReady.typeName, 'peer_ready');
