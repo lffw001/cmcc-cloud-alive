@@ -203,6 +203,18 @@ Analyze local loopback SPICE traffic:
 node bin/cmcc-cloud-alive.js analyze-loopback /path/to/loopback.pcap
 ```
 
+Run an offline local-SPICE proof fixture:
+
+```bash
+node bin/cmcc-cloud-alive.js spice-offline-proof
+```
+
+This reconstructs the Linux local display-channel success boundary without
+network access or SDK startup: display `DISPLAY_INIT`, server `SET_ACK` and
+`PING`, client `ACK_SYNC` and `PONG`, then display `SURFACE_CREATE`/`MARK`.
+It proves the local plaintext state machine and byte encoders before those
+bytes are carried through CAG/ZIME.
+
 Correlate an official-client research CAG capture with a synchronized local
 loopback SPICE capture:
 

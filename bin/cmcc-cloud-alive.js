@@ -20,7 +20,13 @@ const {
   summarizeFirmAuth,
   tokenCheck,
 } = require('../lib/family-api');
-const { createCagHandshakePlan, createProtocolProbeReport, probeProtocolRoute, runCagUdpHandshake } = require('../lib/protocol');
+const {
+  createCagHandshakePlan,
+  createLocalSpiceOfflineDisplayProof,
+  createProtocolProbeReport,
+  probeProtocolRoute,
+  runCagUdpHandshake,
+} = require('../lib/protocol');
 
 function usage() {
   console.log(`Usage:
@@ -44,6 +50,7 @@ function usage() {
   cmcc-cloud-alive extract-cag-tunnel-flow <pcap> [--from SEC.USEC] [--to SEC.USEC] [--limit N]
   cmcc-cloud-alive analyze-loopback <pcap>
   cmcc-cloud-alive correlate-cag-loopback <cag.pcap> <loopback.pcap> [--window-ms 80] [--limit N]
+  cmcc-cloud-alive spice-offline-proof
   cmcc-cloud-alive test
 
 This project is the protocol-level implementation workspace. It does not start
@@ -308,6 +315,30 @@ async function main(argv = process.argv.slice(2)) {
   if (cmd === 'extract-cag-tunnel-flow') return runNodeScript('extract-cag-tunnel-flow.js', args);
   if (cmd === 'analyze-loopback') return runNodeScript('analyze-loopback-spice.js', args);
   if (cmd === 'correlate-cag-loopback') return runNodeScript('correlate-cag-loopback.js', args);
+  if (cmd === 'spice-offline-proof') {
+    const proof = createLocalSpiceOfflineDisplayProof();
+    console.log(JSON.stringify({
+      sdkStarted: false,
+      networkUsed: false,
+      displayInitFrameLength: proof.displayInitFrame.length,
+      responseFrameLengths: proof.responseFrames.map((frame) => frame.length),
+      clientMessages: proof.decodedClient.messages.map((msg) => ({
+        channelPrefix: msg.channelPrefix,
+        type: msg.header.type,
+        serial: msg.header.serial.toString(),
+        size: msg.header.size,
+        trailerHex: msg.trailer.toString('hex'),
+      })),
+      serverMessages: proof.decodedServer.messages.map((msg) => ({
+        type: msg.header.type,
+        serial: msg.header.serial.toString(),
+        size: msg.header.size,
+      })),
+      progress: proof.progress,
+      successPredicate: proof.success,
+    }, null, 2));
+    return;
+  }
   if (cmd === 'verify-http') return runNodeScript('verify-http-heartbeat.js', args);
   if (cmd === 'test') return runNodeScript('../tests/protocol-codec.test.js', []);
   usage();

@@ -51,6 +51,10 @@ const {
   encodeChuanyunFrame,
   encodeChuanyunHead,
   encodeDisplayInit,
+  encodeLocalSpiceAckSyncFrame,
+  encodeLocalSpiceDisplayInitFrame,
+  encodeLocalSpiceExtInfo,
+  createLocalSpiceOfflineDisplayProof,
   encodeMiniHeader,
   encodePong,
   encodeSpiceLinkHeader,
@@ -787,11 +791,21 @@ assert.strictEqual(decodedMainExtInfo.secondaryId, 'a1a2a23150117ab2');
 assert.strictEqual(decodedMainExtInfo.field9eBe, 1);
 assert.strictEqual(decodedMainExtInfo.fielda0Be, 0x0a01);
 assert.strictEqual(decodedMainExtInfo.fielda2Le, 0x02d9);
+assert.strictEqual(encodeLocalSpiceExtInfo({
+  channelPrefix: 1,
+  primaryId: 'e9187c66dafdff1c84ab21324ae0d855',
+  secondaryId: 'a1a2a23150117ab2',
+}).toString('hex'), observedMainExtInfo.toString('hex'));
 const decodedDisplayExtInfo = decodeLocalSpiceExtInfo(observedDisplayExtInfo);
 assert.strictEqual(decodedDisplayExtInfo.channelClass, 3);
 assert.strictEqual(decodedDisplayExtInfo.secondaryId, '56ce4733de036567');
 assert.strictEqual(decodedDisplayExtInfo.field9eBe, 2);
 assert.strictEqual(decodedDisplayExtInfo.fielda0Be, 0x0a02);
+assert.strictEqual(encodeLocalSpiceExtInfo({
+  channelPrefix: 2,
+  primaryId: 'e9187c66dafdff1c84ab21324ae0d855',
+  secondaryId: '56ce4733de036567',
+}).toString('hex'), observedDisplayExtInfo.toString('hex'));
 
 const localClientHandshake = decodeLocalSpiceClientHandshake(Buffer.concat([observedMainExtInfo, mainLink]));
 assert.strictEqual(localClientHandshake.redqOffset, 164);
@@ -815,6 +829,12 @@ assert.strictEqual(decodedDisplayClientData.messages[0].header.type, SpiceMessag
 assert.strictEqual(decodedDisplayClientData.messages[0].header.size, 19);
 assert.strictEqual(decodedDisplayClientData.messages[0].payload.toString('hex'), '000100004001000000000100fc5f0000000000');
 assert.strictEqual(decodedDisplayClientData.messages[0].trailer.toString('hex'), '03');
+assert.strictEqual(encodeLocalSpiceDisplayInitFrame({ serial: 1n }).toString('hex'), observedDisplayClientData.subarray(132).toString('hex'));
+const ackSyncFrame = encodeLocalSpiceAckSyncFrame(1, { serial: 2n });
+const decodedAckSyncFrame = decodeLocalSpiceClientDataMessages(ackSyncFrame);
+assert.strictEqual(decodedAckSyncFrame.messages[0].channelPrefix, 2);
+assert.strictEqual(decodedAckSyncFrame.messages[0].header.type, SpiceMessage.ACK_SYNC);
+assert.strictEqual(decodedAckSyncFrame.messages[0].payload.readUInt32LE(0), 1);
 
 const syntheticServerReply = Buffer.concat([
   Buffer.from([2]),
@@ -864,6 +884,17 @@ progress = applyProtocolEvent(progress, ProtocolStage.SURFACE_CREATE_RECEIVED);
 assert.strictEqual(isProtocolKeepaliveSuccess(progress), false);
 progress = applyProtocolEvent(progress, ProtocolStage.DRAW_COPY_RECEIVED);
 assert.strictEqual(isProtocolKeepaliveSuccess(progress), true);
+
+const offlineDisplayProof = createLocalSpiceOfflineDisplayProof();
+assert.strictEqual(offlineDisplayProof.success, true);
+assert.strictEqual(offlineDisplayProof.progress.displayInitSent, true);
+assert.strictEqual(offlineDisplayProof.progress.setAckReceived, true);
+assert.strictEqual(offlineDisplayProof.progress.ackSyncSent, true);
+assert.strictEqual(offlineDisplayProof.progress.pingReceived, true);
+assert.strictEqual(offlineDisplayProof.progress.pongSent, true);
+assert.strictEqual(offlineDisplayProof.progress.surfaceCreateReceived, true);
+assert.strictEqual(offlineDisplayProof.progress.markReceived, true);
+assert.strictEqual(offlineDisplayProof.responseFrames.length, 2);
 
 const markOnlyProgress = applyProtocolEvent(
   applyProtocolEvent(createProtocolProgress(), ProtocolStage.DRAW_COPY_RECEIVED),

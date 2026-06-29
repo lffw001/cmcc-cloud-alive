@@ -902,10 +902,45 @@ The protocol mode is not complete until the final verification item passes.
 - Reverse the remaining observed 24-byte ZTE CAG tunnel header field semantics and sequencing.
 - Reverse or instrument `libZIMEDataEngine.so` enough to understand packet-out, ACK, retransmit, and data-channel callbacks.
 - Resolve the UDP/opentelemetry server-key flags versus observed connect-info AES mode mismatch.
-- Implement main-channel REDQ/auth/MAIN_INIT/CHANNELS_LIST.
-- Implement display-channel REDQ/auth/DISPLAY_INIT flow.
-- Parse display messages and respond to SET_ACK/PING.
-- Confirm real keepalive by observing SURFACE_CREATE/DRAW_COPY/MARK.
+- Carry main-channel REDQ/auth/MAIN_INIT/CHANNELS_LIST through the live CAG/ZIME or SCG transport.
+- Carry display-channel REDQ/auth/DISPLAY_INIT through the live CAG/ZIME or SCG transport.
+- Respond to live display-channel SET_ACK/PING while holding a real remote session.
+- Confirm real keepalive by observing live SURFACE_CREATE/DRAW_COPY/MARK without SDK startup.
+
+## Offline Local-SPICE Proof
+
+The project now has a deterministic local-SPICE proof command:
+
+```bash
+node bin/cmcc-cloud-alive.js spice-offline-proof
+```
+
+This command does not start the SDK and does not open network sockets. It
+reconstructs the captured Linux local plaintext shapes:
+
+```text
+client display frame:
+  0x0a 0x02 local frame
+  full data header type DISPLAY_INIT
+  19-byte Linux DISPLAY_INIT payload
+  observed trailer byte 0x03
+
+server display fixture:
+  auth result 0
+  SET_ACK
+  PING
+  SURFACE_CREATE
+  MARK
+
+client responses:
+  ACK_SYNC for SET_ACK generation
+  PONG echoing PING payload
+```
+
+The output includes `successPredicate=true`, `sdkStarted=false`, and
+`networkUsed=false`. This advances the local plaintext part of the protocol
+plan, but it is still not final keepalive because the bytes are not yet carried
+through the Linux CAG/ZIME transport.
 
 ## Next Capture Work
 
