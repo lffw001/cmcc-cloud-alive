@@ -166,9 +166,15 @@ longer than the expected idle window, and with the strict proof gate enabled:
 sudo node bin/cmcc-cloud-alive.js verify-http 2663816 \
   --duration-ms 3600000 \
   --interval-ms 30000 \
+  --wait-powered-ms 600000 \
   --require-sleep-proof 1 \
   --report-file ./reports/http-proof.json
 ```
+
+`--wait-powered-ms` is a precheck window. It polls `cloud-status`; the proof
+timer starts only after the VM is powered/running. If the VM remains `已关机`,
+the command exits non-zero and writes a report explaining that the proof did
+not start.
 
 In strict mode the command exits non-zero unless:
 

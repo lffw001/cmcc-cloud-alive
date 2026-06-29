@@ -106,9 +106,13 @@ Use this as the final proof gate after the VM is already powered/running:
 sudo node bin/cmcc-cloud-alive.js verify-http <userServiceId> \
   --duration-ms 3600000 \
   --interval-ms 30000 \
+  --wait-powered-ms 600000 \
   --require-sleep-proof 1 \
   --report-file ./reports/http-proof.json
 ```
+
+`--wait-powered-ms` is a precheck window. The proof timer starts only after the
+cloud PC status becomes powered/running.
 
 The heartbeat command is aligned to the family Linux client source: `4043`
 (`YUN_OTHER_LOGIN`) is treated as a hard stop, while other JSON business codes

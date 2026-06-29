@@ -9,7 +9,7 @@ const { cloudStatus, heartbeat, isHeartbeatAccepted } = require('../lib/family-a
 const OFFICIAL_PROCESS_PATTERN = 'bootCypc|uSmartView|chuanyun-vdi-client|yidongyun-keepalive|server/web-server';
 
 function usage() {
-  console.error('Usage: node scripts/verify-http-heartbeat.js <userServiceId> [--duration-ms 120000] [--interval-ms 30000] [--cag-host 111.31.3.182] [--cag-port 8899] [--tcpdump 1] [--require-sleep-proof 0] [--min-proof-duration-ms 1800000] [--report-file report.json]');
+  console.error('Usage: node scripts/verify-http-heartbeat.js <userServiceId> [--duration-ms 120000] [--interval-ms 30000] [--wait-powered-ms 0] [--wait-powered-interval-ms 10000] [--cag-host 111.31.3.182] [--cag-port 8899] [--tcpdump 1] [--require-sleep-proof 0] [--min-proof-duration-ms 1800000] [--report-file report.json]');
   process.exit(2);
 }
 
@@ -23,6 +23,8 @@ function parseArgs(argv) {
     tcpdump: '1',
     requireSleepProof: '0',
     minProofDurationMs: 30 * 60 * 1000,
+    waitPoweredMs: 0,
+    waitPoweredIntervalMs: 10000,
     reportFile: '',
   };
   for (let i = 0; i < argv.length; i++) {
@@ -37,6 +39,8 @@ function parseArgs(argv) {
   out.durationMs = Math.max(5000, Number(out.durationMs || 0));
   out.intervalMs = Math.max(5000, Number(out.intervalMs || 0));
   out.minProofDurationMs = Math.max(5000, Number(out.minProofDurationMs || 0));
+  out.waitPoweredMs = Math.max(0, Number(out.waitPoweredMs || 0));
+  out.waitPoweredIntervalMs = Math.max(1000, Number(out.waitPoweredIntervalMs || 0));
   return out;
 }
 
@@ -160,6 +164,47 @@ function writeReportFile(file, report) {
   }
 }
 
+async function waitForPoweredState(userServiceId, timeoutMs, intervalMs) {
+  const out = {
+    requested: timeoutMs > 0,
+    timeoutMs,
+    intervalMs,
+    snapshots: [],
+    powered: false,
+    timedOut: false,
+  };
+  if (!out.requested) return out;
+
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() <= deadline) {
+    const at = new Date();
+    try {
+      const status = await cloudStatus(userServiceId);
+      out.snapshots.push({
+        at: at.toISOString(),
+        atShanghai: formatShanghai(at),
+        status,
+        powered: isPoweredState(status),
+      });
+      if (isPoweredState(status)) {
+        out.powered = true;
+        return out;
+      }
+    } catch (err) {
+      out.snapshots.push({
+        at: at.toISOString(),
+        atShanghai: formatShanghai(at),
+        error: summarizeError(err),
+      });
+    }
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+    await wait(Math.min(intervalMs, remaining));
+  }
+  out.timedOut = true;
+  return out;
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const userServiceId = args._[0];
@@ -173,6 +218,8 @@ async function main() {
     intervalMs: args.intervalMs,
     requireSleepProof: String(args.requireSleepProof) === '1',
     minProofDurationMs: args.minProofDurationMs,
+    waitPoweredMs: args.waitPoweredMs,
+    waitPoweredIntervalMs: args.waitPoweredIntervalMs,
     reportFile: args.reportFile ? String(args.reportFile) : '',
     cagHost: String(args.cagHost),
     cagPort: String(args.cagPort),
@@ -189,6 +236,7 @@ async function main() {
     },
     cloudStatusBefore: null,
     cloudStatusAfter: null,
+    waitPowered: null,
     heartbeats: [],
     acceptedCount: 0,
     errorCount: 0,
@@ -201,6 +249,22 @@ async function main() {
     report.cloudStatusBefore = await cloudStatus(userServiceId);
   } catch (err) {
     report.cloudStatusBeforeError = summarizeError(err);
+  }
+  report.waitPowered = await waitForPoweredState(userServiceId, args.waitPoweredMs, args.waitPoweredIntervalMs);
+  if (report.waitPowered.requested && !report.waitPowered.powered) {
+    report.finishedAt = new Date().toISOString();
+    report.finishedAtShanghai = formatShanghai();
+    report.officialProcessesAfter = await pgrepOfficialProcesses();
+    report.cagConnectionsAfter = await ssCagConnections(report.cagHost, report.cagPort);
+    report.noOfficialClientStarted = report.officialProcessesBefore.length === 0 && report.officialProcessesAfter.length === 0;
+    report.noCagConnectionObserved = report.cagConnectionsBefore.length === 0 && report.cagConnectionsAfter.length === 0;
+    report.httpPathOk = false;
+    report.sleepPreventionProof = false;
+    report.proofFailureReasons = ['cloud did not become powered/running before wait-powered timeout'];
+    report.ok = false;
+    writeReportFile(report.reportFile, report);
+    console.log(JSON.stringify(report, null, 2));
+    process.exit(1);
   }
 
   let tcpdump = null;
@@ -215,6 +279,8 @@ async function main() {
   }
 
   const deadline = Date.now() + args.durationMs;
+  report.proofStartedAt = new Date().toISOString();
+  report.proofStartedAtShanghai = formatShanghai();
   let index = 0;
   while (Date.now() < deadline) {
     index++;
