@@ -4,12 +4,13 @@
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const { cloudStatus, heartbeat, isHeartbeatAccepted } = require('../lib/family-api');
+const dns = require('dns').promises;
+const { cloudStatus, getHeartbeatIntervalMs, heartbeat, isHeartbeatAccepted } = require('../lib/family-api');
 
 const OFFICIAL_PROCESS_PATTERN = 'bootCypc|uSmartView|chuanyun-vdi-client|yidongyun-keepalive|server/web-server';
 
 function usage() {
-  console.error('Usage: node scripts/verify-http-heartbeat.js <userServiceId> [--duration-ms 120000] [--interval-ms 30000] [--wait-powered-ms 0] [--wait-powered-interval-ms 10000] [--cag-host 111.31.3.182] [--cag-port 8899] [--tcpdump 1] [--require-sleep-proof 0] [--min-proof-duration-ms 1800000] [--report-file report.json]');
+  console.error('Usage: node scripts/verify-http-heartbeat.js <userServiceId> [--duration-ms 120000] [--interval-ms official] [--wait-powered-ms 0] [--wait-powered-interval-ms 10000] [--http-host soho.komect.com] [--http-port 443] [--http-tcpdump 1] [--cag-host 111.31.3.182] [--cag-port 8899] [--tcpdump 1] [--require-sleep-proof 0] [--min-proof-duration-ms 1800000] [--report-file report.json]');
   process.exit(2);
 }
 
@@ -17,7 +18,10 @@ function parseArgs(argv) {
   const out = {
     _: [],
     durationMs: 120000,
-    intervalMs: 30000,
+    intervalMs: '',
+    httpHost: 'soho.komect.com',
+    httpPort: '443',
+    httpTcpdump: '1',
     cagHost: '111.31.3.182',
     cagPort: '8899',
     tcpdump: '1',
@@ -37,7 +41,11 @@ function parseArgs(argv) {
     }
   }
   out.durationMs = Math.max(5000, Number(out.durationMs || 0));
-  out.intervalMs = Math.max(5000, Number(out.intervalMs || 0));
+  if (out.intervalMs === '' || String(out.intervalMs).toLowerCase() === 'official') {
+    out.intervalMs = '';
+  } else {
+    out.intervalMs = Math.max(5000, Number(out.intervalMs || 0));
+  }
   out.minProofDurationMs = Math.max(5000, Number(out.minProofDurationMs || 0));
   out.waitPoweredMs = Math.max(0, Number(out.waitPoweredMs || 0));
   out.waitPoweredIntervalMs = Math.max(1000, Number(out.waitPoweredIntervalMs || 0));
@@ -90,16 +98,28 @@ async function pgrepOfficialProcesses() {
     .filter((line) => line && !line.includes('verify-http-heartbeat'));
 }
 
-async function ssCagConnections(cagHost, cagPort) {
+async function ssConnections(host, port) {
   const result = await runCapture('ss', ['-tunp']);
   return result.stdout
     .split('\n')
-    .filter((line) => line.includes(cagHost) && line.includes(`:${cagPort}`))
+    .filter((line) => line.includes(host) && line.includes(`:${port}`))
     .map((line) => line.trim());
 }
 
-function startTcpdump(cagHost, cagPort) {
-  const filter = `host ${cagHost} and port ${cagPort}`;
+async function resolveHostAddresses(host) {
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.includes(':')) return [host];
+  const records = await dns.lookup(host, { all: true });
+  return [...new Set(records.map((record) => record.address))];
+}
+
+function hostFilter(hosts) {
+  return hosts.length === 1
+    ? `host ${hosts[0]}`
+    : `(${hosts.map((host) => `host ${host}`).join(' or ')})`;
+}
+
+function startTcpdump(hosts, port) {
+  const filter = `${hostFilter(hosts)} and port ${port}`;
   const child = spawn('tcpdump', ['-i', 'any', '-nn', '-l', '-tt', filter], {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -209,25 +229,38 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const userServiceId = args._[0];
   if (!userServiceId) usage();
+  const intervalMs = args.intervalMs === '' ? await getHeartbeatIntervalMs() : args.intervalMs;
 
   const report = {
     startedAt: new Date().toISOString(),
     startedAtShanghai: formatShanghai(),
     userServiceId: String(userServiceId),
     durationMs: args.durationMs,
-    intervalMs: args.intervalMs,
+    intervalMs,
     requireSleepProof: String(args.requireSleepProof) === '1',
     minProofDurationMs: args.minProofDurationMs,
     waitPoweredMs: args.waitPoweredMs,
     waitPoweredIntervalMs: args.waitPoweredIntervalMs,
     reportFile: args.reportFile ? String(args.reportFile) : '',
+    httpHost: String(args.httpHost),
+    httpPort: String(args.httpPort),
+    httpAddresses: [],
     cagHost: String(args.cagHost),
     cagPort: String(args.cagPort),
     officialProcessesBefore: [],
     officialProcessesAfter: [],
+    httpConnectionsBefore: [],
+    httpConnectionsAfter: [],
     cagConnectionsBefore: [],
     cagConnectionsAfter: [],
-    tcpdump: {
+    httpTcpdump: {
+      requested: String(args.httpTcpdump) !== '0',
+      started: false,
+      packetLines: [],
+      stderr: '',
+      error: '',
+    },
+    cagTcpdump: {
       requested: String(args.tcpdump) !== '0',
       started: false,
       packetLines: [],
@@ -244,7 +277,15 @@ async function main() {
   };
 
   report.officialProcessesBefore = await pgrepOfficialProcesses();
-  report.cagConnectionsBefore = await ssCagConnections(report.cagHost, report.cagPort);
+  try {
+    report.httpAddresses = await resolveHostAddresses(report.httpHost);
+  } catch (err) {
+    report.httpTcpdump.error = `resolve ${report.httpHost} failed: ${err.message}`;
+  }
+  for (const address of report.httpAddresses) {
+    report.httpConnectionsBefore.push(...await ssConnections(address, report.httpPort));
+  }
+  report.cagConnectionsBefore = await ssConnections(report.cagHost, report.cagPort);
   try {
     report.cloudStatusBefore = await cloudStatus(userServiceId);
   } catch (err) {
@@ -255,8 +296,12 @@ async function main() {
     report.finishedAt = new Date().toISOString();
     report.finishedAtShanghai = formatShanghai();
     report.officialProcessesAfter = await pgrepOfficialProcesses();
-    report.cagConnectionsAfter = await ssCagConnections(report.cagHost, report.cagPort);
+    for (const address of report.httpAddresses) {
+      report.httpConnectionsAfter.push(...await ssConnections(address, report.httpPort));
+    }
+    report.cagConnectionsAfter = await ssConnections(report.cagHost, report.cagPort);
     report.noOfficialClientStarted = report.officialProcessesBefore.length === 0 && report.officialProcessesAfter.length === 0;
+    report.httpTrafficObserved = report.httpConnectionsBefore.length > 0 || report.httpConnectionsAfter.length > 0;
     report.noCagConnectionObserved = report.cagConnectionsBefore.length === 0 && report.cagConnectionsAfter.length === 0;
     report.httpPathOk = false;
     report.sleepPreventionProof = false;
@@ -267,14 +312,25 @@ async function main() {
     process.exit(1);
   }
 
-  let tcpdump = null;
-  if (report.tcpdump.requested) {
-    tcpdump = startTcpdump(report.cagHost, report.cagPort);
-    report.tcpdump.started = true;
+  let httpTcpdump = null;
+  if (report.httpTcpdump.requested && report.httpAddresses.length > 0) {
+    httpTcpdump = startTcpdump(report.httpAddresses, report.httpPort);
+    report.httpTcpdump.started = true;
     await wait(1000);
-    if (tcpdump.startError) {
-      report.tcpdump.started = false;
-      report.tcpdump.error = tcpdump.startError;
+    if (httpTcpdump.startError) {
+      report.httpTcpdump.started = false;
+      report.httpTcpdump.error = httpTcpdump.startError;
+    }
+  }
+
+  let cagTcpdump = null;
+  if (report.cagTcpdump.requested) {
+    cagTcpdump = startTcpdump([report.cagHost], report.cagPort);
+    report.cagTcpdump.started = true;
+    await wait(1000);
+    if (cagTcpdump.startError) {
+      report.cagTcpdump.started = false;
+      report.cagTcpdump.error = cagTcpdump.startError;
     }
   }
 
@@ -319,18 +375,28 @@ async function main() {
     }
     const remaining = deadline - Date.now();
     if (remaining <= 0) break;
-    await wait(Math.min(args.intervalMs, remaining));
+    await wait(Math.min(intervalMs, remaining));
   }
 
-  if (tcpdump) {
-    await tcpdump.stop();
-    report.tcpdump.packetLines = tcpdump.lines;
-    report.tcpdump.stderr = tcpdump.stderr.trim();
-    report.tcpdump.error = report.tcpdump.error || tcpdump.startError || '';
+  if (httpTcpdump) {
+    await httpTcpdump.stop();
+    report.httpTcpdump.packetLines = httpTcpdump.lines;
+    report.httpTcpdump.stderr = httpTcpdump.stderr.trim();
+    report.httpTcpdump.error = report.httpTcpdump.error || httpTcpdump.startError || '';
+  }
+
+  if (cagTcpdump) {
+    await cagTcpdump.stop();
+    report.cagTcpdump.packetLines = cagTcpdump.lines;
+    report.cagTcpdump.stderr = cagTcpdump.stderr.trim();
+    report.cagTcpdump.error = report.cagTcpdump.error || cagTcpdump.startError || '';
   }
 
   report.officialProcessesAfter = await pgrepOfficialProcesses();
-  report.cagConnectionsAfter = await ssCagConnections(report.cagHost, report.cagPort);
+  for (const address of report.httpAddresses) {
+    report.httpConnectionsAfter.push(...await ssConnections(address, report.httpPort));
+  }
+  report.cagConnectionsAfter = await ssConnections(report.cagHost, report.cagPort);
   try {
     report.cloudStatusAfter = await cloudStatus(userServiceId);
   } catch (err) {
@@ -339,10 +405,14 @@ async function main() {
   report.finishedAt = new Date().toISOString();
   report.finishedAtShanghai = formatShanghai();
   report.noOfficialClientStarted = report.officialProcessesBefore.length === 0 && report.officialProcessesAfter.length === 0;
+  report.httpTrafficObserved = report.httpTcpdump.packetLines.length > 0 ||
+    report.httpConnectionsBefore.length > 0 ||
+    report.httpConnectionsAfter.length > 0;
   report.noCagConnectionObserved = report.cagConnectionsBefore.length === 0 &&
     report.cagConnectionsAfter.length === 0 &&
-    report.tcpdump.packetLines.length === 0;
+    report.cagTcpdump.packetLines.length === 0;
   report.httpPathOk = report.acceptedCount > 0 &&
+    report.httpTrafficObserved &&
     !report.stoppedByOtherLogin &&
     report.noOfficialClientStarted &&
     report.noCagConnectionObserved;
@@ -358,6 +428,7 @@ async function main() {
     report.durationMs >= report.minProofDurationMs;
   report.proofFailureReasons = [];
   if (!report.httpPathOk) report.proofFailureReasons.push('http path verification failed');
+  if (!report.httpTrafficObserved) report.proofFailureReasons.push('no SOHO HTTPS packets/connections observed');
   if (statusSnapshots.length === 0) report.proofFailureReasons.push('no cloud status snapshots');
   if (statusSnapshots.length > 0 && report.poweredStatusSnapshots !== statusSnapshots.length) {
     report.proofFailureReasons.push('one or more cloud status snapshots are not powered/running');

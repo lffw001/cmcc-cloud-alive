@@ -8,6 +8,7 @@ const {
   cloudStatus,
   FamilyApiError,
   getFirmAuth,
+  getHeartbeatIntervalMs,
   heartbeat,
   importLegacyState,
   isHeartbeatAccepted,
@@ -40,8 +41,8 @@ function usage() {
   cmcc-cloud-alive cag-plan <userServiceId> [--random-key HEX] [--server-key HEX] [--tunnel-id HEX] [--local-key-sequence N] [--connect-info-sequence N] [--connect-info-control-word N] [--base-flags N] [--transport-flag N] [--address-family-flag N] [--show-hex 0]
   cmcc-cloud-alive cag-handshake <userServiceId> [--send-preflight 0] [--send-connect-info 0] [--send-ready 0] [--timeout-ms 5000] [--base-flags N] [--transport-flag N] [--address-family-flag N]
   cmcc-cloud-alive heartbeat <userServiceId>
-  cmcc-cloud-alive heartbeat-loop <userServiceId> [--interval-ms 30000] [--stop-on-error 0]
-  cmcc-cloud-alive verify-http <userServiceId> [--duration-ms 120000] [--interval-ms 30000] [--wait-powered-ms 0] [--require-sleep-proof 0]
+  cmcc-cloud-alive heartbeat-loop <userServiceId> [--interval-ms official] [--stop-on-error 0]
+  cmcc-cloud-alive verify-http <userServiceId> [--duration-ms 120000] [--interval-ms official] [--wait-powered-ms 0] [--require-sleep-proof 0]
   cmcc-cloud-alive token-check
   cmcc-cloud-alive import-legacy-state
   cmcc-cloud-alive state
@@ -253,6 +254,7 @@ async function main(argv = process.argv.slice(2)) {
     const response = await heartbeat(userServiceId);
     console.log(JSON.stringify({
       ok: true,
+      endpoint: '/cc/cloudPc/heartbeat/v2',
       acceptedByClientLogic: isHeartbeatAccepted(response),
       userServiceId,
       code: response.code,
@@ -263,12 +265,16 @@ async function main(argv = process.argv.slice(2)) {
   }
   if (cmd === 'heartbeat-loop') {
     const userServiceId = await resolveCachedUserServiceId(args[0]?.startsWith('--') ? '' : args[0]);
-    const intervalMs = Math.max(5000, Number(readOption(args, '--interval-ms', 30000)));
+    const intervalOption = readOption(args, '--interval-ms', '');
+    const useOfficialInterval = !intervalOption || String(intervalOption).toLowerCase() === 'official';
+    const intervalMs = useOfficialInterval
+      ? await getHeartbeatIntervalMs()
+      : Math.max(5000, Number(intervalOption));
     const stopOnError = String(readOption(args, '--stop-on-error', '0')) === '1';
     let stopped = false;
     process.on('SIGINT', () => { stopped = true; });
     process.on('SIGTERM', () => { stopped = true; });
-    console.log(`heartbeat loop started: userServiceId=${userServiceId} intervalMs=${intervalMs} stopOnError=${stopOnError}`);
+    console.log(`普通云电脑 HTTP v2 保活已启动: userServiceId=${userServiceId} intervalMs=${intervalMs} stopOnError=${stopOnError}`);
     let count = 0;
     let failures = 0;
     const loopStartedAt = Date.now();
@@ -278,7 +284,9 @@ async function main(argv = process.argv.slice(2)) {
       try {
         const response = await heartbeat(userServiceId);
         failures = 0;
-        console.log(`[${formatTime()}] [${count}] 保活响应: accepted=${isHeartbeatAccepted(response)} 持续=${formatDuration(Date.now() - loopStartedAt)} code=${response.code} msg=${response.msg || ''} businessCode=${response.businessCode || ''}`);
+        const accepted = isHeartbeatAccepted(response);
+        const label = accepted ? '保活成功' : '保活响应未接受';
+        console.log(`[${formatTime()}] [${count}] ${label}: ${formatDuration(Date.now() - loopStartedAt)} endpoint=/cc/cloudPc/heartbeat/v2 code=${response.code} msg=${response.msg || ''} businessCode=${response.businessCode || ''}`);
       } catch (err) {
         failures++;
         console.error(`[${formatTime()}] [${count}] 保活异常: failures=${failures} 持续=${formatDuration(Date.now() - loopStartedAt)} ${errorSummary(err)}`);

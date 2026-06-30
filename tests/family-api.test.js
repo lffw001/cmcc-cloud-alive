@@ -7,6 +7,7 @@ const {
   assertBusinessOk,
   createSign,
   findCloudByUserServiceId,
+  heartbeatIntervalFromSettings,
   isHeartbeatAccepted,
   isOtherLoginResponse,
   isSuccessResponse,
@@ -38,6 +39,9 @@ assert.strictEqual(isOtherLoginResponse({ code: 4043, msg: 'YUN_OTHER_LOGIN' }),
 assert.strictEqual(isOtherLoginResponse({ code: 4041, msg: '当前云电脑处于解锁状态,且无密码' }), false);
 assert.strictEqual(isHeartbeatAccepted({ code: 4041, msg: '当前云电脑处于解锁状态,且无密码' }), true);
 assert.strictEqual(isHeartbeatAccepted({ code: 4043, msg: 'YUN_OTHER_LOGIN' }), false);
+assert.strictEqual(heartbeatIntervalFromSettings({ cloudPcheartbeatTime: 30 }), 30000);
+assert.strictEqual(heartbeatIntervalFromSettings({ cloudPcheartbeatTime: 3 }), 5000);
+assert.strictEqual(heartbeatIntervalFromSettings({}, 45000), 45000);
 const cloudList = [
   { userServiceId: 1, vmName: 'a', vmStatus: 1, vmStatusShow: '运行中' },
   { userServiceId: 2663816, vmName: '家庭云电脑', spuCode: 'zte-cloud-pc', skuName: '家庭版', vmStatus: 16, vmStatusShow: '已关机', serviceStatus: 1 },

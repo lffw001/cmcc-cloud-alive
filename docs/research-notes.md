@@ -24,8 +24,9 @@ This project scope:
 
 ```text
 Product: family cloud PC
-Observed client route: Linux/ZTE CAG 8899 with ZTEC/ZIME tunnel traffic
-Success boundary: SPICE display flow reaches DISPLAY_INIT and surface/render signals
+Primary route: ordinary cloud-PC HTTP heartbeat over SOHO API
+Fallback route: Linux/ZTE CAG 8899 with ZTEC/ZIME tunnel traffic, only if HTTP is disproved
+Success boundary: powered/running VM stays awake past idle window while no official client or CAG/SPICE traffic is used
 ```
 
 Do not copy the enterprise Windows protocol fields, endpoints, constants, or
@@ -57,13 +58,13 @@ Useful methodology extracted from the article:
   identified. Loose validation in another edition does not prove loose
   validation here.
 
-Current family-edition implication:
+Current family-edition implication after the HTTP-first redirect:
 
 ```text
-Continue the Linux CAG/ZIME path.
-Optionally audit family-edition HTTP traffic for session-liveness endpoints,
-but do not redefine success away from DISPLAY_INIT/SURFACE_CREATE/MARK unless
-family-edition captures prove that a simpler server-side heartbeat is sufficient.
+Do not continue SPICE/CAG as the main path until the ordinary HTTP heartbeat is
+tested properly. The correct process is static family-client audit -> HTTP
+capture/replay -> long powered/running proof. Only if that fails should the
+project return to SPICE/CAG/ZIME.
 ```
 
 ## Family Edition Source Audit Update
@@ -89,3 +90,15 @@ For family `/cc/cloudPc/heartbeat/v2`, source and runtime currently agree that
 `4043` is the dangerous other-login/kick signal. A runtime response of `4041`
 was accepted by the family client's scheduler semantics because the source only
 stops on `4043`.
+
+On 2026-06-30 the ordinary-cloud-PC endpoint version was rechecked:
+
+```text
+ordinary cloud PC: /cc/cloudPc/heartbeat/v2
+time-zone / entertainment branch: /timeZone/heartbeat/v1
+```
+
+A direct probe with the current family account showed `/cc/cloudPc/heartbeat/v1`
+returns `2000/SUCCESS`, but it is not the ordinary-cloud-PC heartbeat used by
+the current Linux family client source. The implementation therefore stays on
+`/cc/cloudPc/heartbeat/v2`.

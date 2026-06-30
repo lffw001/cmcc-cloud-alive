@@ -1,43 +1,63 @@
 # cmcc-cloud-alive
 
-Protocol-level keepalive research and implementation for China Mobile Cloud PC.
+Pure HTTP-first keepalive research and implementation for China Mobile Cloud PC
+family edition.
 
 This is a new project. It is not the legacy SDK-wrapper keepalive that starts
 `bootCypc` or `uSmartView_VDI_Client`.
 
 ## Source And Credit
 
-This project is inspired by and cross-checks against the protocol analysis in:
+This project credits and cross-checks against these reverse-engineering notes:
 
-<https://codming.com/posts/cmcc-cloud-computer-keepalive/>
+- <https://hansiy.net/p/86b7133e>
+- <https://codming.com/posts/cmcc-cloud-computer-keepalive/>
 
-The blog demonstrates that a real keepalive can be implemented at protocol
-level by reaching the SPICE display channel, sending `DISPLAY_INIT`, observing
-display surface traffic, and replying to keepalive messages. This repository
-uses that success boundary, while also treating the observed Linux/ZTE
-CAG/ZIME route as a first-class route.
+The Hansiy article is for methodology, not endpoint copying: it is about the
+enterprise Windows client, while this project targets the family edition. The
+important process kept here is:
+
+1. statically reverse the actual family client and recover request behavior;
+2. verify runtime traffic with packet capture because capture evidence wins
+   when it conflicts with source-code assumptions;
+3. only call a route keepalive after a long run proves the cloud PC stays
+   powered without starting or occupying the official client.
 
 ## Goal
 
-A successful protocol keepalive must:
+The primary target is the ordinary family cloud-PC HTTP heartbeat:
+
+```text
+POST https://soho.komect.com/terminal/cc/cloudPc/heartbeat/v2
+body: { userServiceId }
+```
+
+A successful HTTP keepalive must:
 
 - not start official SDK client binaries;
-- authenticate the main and display channels;
-- send `DISPLAY_INIT`;
-- observe display surface/render signals such as `SURFACE_CREATE`, `DRAW_COPY`,
-  or `MARK`;
-- handle `SET_ACK`, `PING`, and `PONG` during the hold window.
+- send the same ordinary-cloud-PC heartbeat endpoint used by the family client;
+- preserve business responses instead of converting them to generic network
+  errors;
+- stop only on `4043`/`YUN_OTHER_LOGIN`, matching the family client scheduler;
+- show SOHO HTTPS traffic in capture and no CAG/SPICE traffic;
+- prove the VM stays powered/running beyond the idle sleep window.
 
-SDK log lines such as `connectDesktop ret val: 0` are not considered protocol
-success.
+SPICE/CAG/ZIME remains a fallback research route only if the HTTP route is
+proven insufficient. SDK log lines such as `connectDesktop ret val: 0` are not
+considered success.
 
 ## Current Status
 
 Implemented and tested:
 
 - Family-edition SOHO API signing/RSA request support for SMS login, cloud
-  list, token check, and the HTTP heartbeat candidate
+  list, token check, system settings, and ordinary-cloud-PC HTTP heartbeat
   `/cc/cloudPc/heartbeat/v2`.
+- Continuous `heartbeat-loop` with client-aligned retry semantics and explicit
+  `保活成功: <duration>` log lines.
+- `verify-http` report generation that checks accepted heartbeat responses,
+  SOHO HTTPS traffic, absence of official SDK processes, absence of CAG `8899`
+  traffic, and cloud-PC status snapshots.
 - SPICE REDQ link codecs, full data headers, `DISPLAY_INIT`, `SET_ACK`, ACK,
   and PONG helpers.
 - Linux local GSpice/proxy loopback parser.
@@ -53,13 +73,12 @@ Implemented and tested:
 
 Not complete yet:
 
-- standalone `keepalive` command that carries SPICE over CAG/ZIME without SDK;
+- final long-duration proof on a VM that is already powered/running;
+- standalone SPICE-over-CAG/ZIME fallback keepalive without SDK;
 - ZIME reliable UDP sequencing, ACK, retransmit, and close implementation;
 - DISPLAY_INIT-level proof on the Linux family CAG route;
-- long-duration proof that the protocol path prevents family cloud PC sleep
-  while not occupying or kicking the normal official client session.
 
-The current code is intentionally fail-closed around unproven auth/tunnel
+The current code is intentionally fail-closed around unproven SPICE/CAG/ZIME
 sending paths.
 
 ## Usage
@@ -102,15 +121,20 @@ node bin/cmcc-cloud-alive.js heartbeat <userServiceId>
 Run it continuously:
 
 ```bash
-node bin/cmcc-cloud-alive.js heartbeat-loop <userServiceId> --interval-ms 30000
+node bin/cmcc-cloud-alive.js heartbeat-loop <userServiceId>
 ```
 
+When `--interval-ms` is omitted, the interval is read from the official family
+client settings endpoint `/system/settings/v1` (`cloudPcheartbeatTime`) and
+falls back to 30 seconds if settings are unavailable.
+
 Generate a short verification report that checks heartbeat responses, official
-client processes, CAG `8899` traffic, and cloud-PC status snapshots:
+client processes, SOHO HTTPS traffic, CAG `8899` traffic, and cloud-PC status
+snapshots:
 
 ```bash
 sudo node bin/cmcc-cloud-alive.js verify-http <userServiceId> \
-  --duration-ms 120000 --interval-ms 30000
+  --duration-ms 120000
 ```
 
 `verify-http` reports `httpPathOk` for the pure HTTP path and
@@ -192,7 +216,6 @@ Use this as the final proof gate after the VM is already powered/running:
 ```bash
 sudo node bin/cmcc-cloud-alive.js verify-http <userServiceId> \
   --duration-ms 3600000 \
-  --interval-ms 30000 \
   --wait-powered-ms 600000 \
   --require-sleep-proof 1 \
   --report-file ./reports/http-proof.json
@@ -215,6 +238,26 @@ On the current test account, `/cc/cloudPc/heartbeat/v2` returned:
   "msg": "当前云电脑处于解锁状态,且无密码",
   "businessCode": "90020129"
 }
+```
+
+Docker:
+
+```bash
+docker compose build
+docker compose run --rm cmcc-cloud-alive sms-send <phone>
+docker compose run --rm cmcc-cloud-alive sms-login <phone> <code>
+docker compose run --rm cmcc-cloud-alive list
+CMCC_USER_SERVICE_ID=<userServiceId> docker compose --profile loop up -d
+```
+
+For packet-capture verification in Docker, run with host networking or grant
+capture capability:
+
+```bash
+docker run --rm --network host --cap-add NET_RAW --cap-add NET_ADMIN \
+  -e CMCC_ALIVE_STATE=/state/state.json \
+  -v cmcc-cloud-alive-state:/state \
+  cmcc-cloud-alive:local verify-http <userServiceId> --duration-ms 120000
 ```
 
 Analyze external CAG traffic:

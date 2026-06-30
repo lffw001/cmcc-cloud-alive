@@ -4,9 +4,22 @@ This document tracks the protocol-level keepalive work. It is intentionally sepa
 
 ## Target
 
-Protocol mode must not start `bootCypc` or `uSmartView_VDI_Client`.
+Current primary mode is ordinary family-cloud-PC pure HTTP keepalive. It must
+not start `bootCypc`, `uSmartView_VDI_Client`, or any official SDK wrapper.
 
-The success signal is:
+The current success signal is:
+
+```text
+family client source points ordinary cloud PC to /cc/cloudPc/heartbeat/v2
+runtime packet capture shows SOHO HTTPS traffic for the loop
+runtime packet capture shows no CAG 8899 / SPICE traffic from this tool
+business responses are preserved; only 4043/YUN_OTHER_LOGIN stops the loop
+powered/running VM stays awake beyond the normal idle window
+normal official client usage is not kicked or occupied by this tool
+```
+
+SPICE/CAG/ZIME is now a fallback research route only if HTTP is disproved. The
+fallback success signal remains:
 
 ```text
 SCG/CAG auth
@@ -20,7 +33,9 @@ SET_ACK and PING/PONG handled while holding the session
 
 `connectDesktop ret val: 0` is only an SDK-mode signal and is not protocol-level proof.
 
-The implementation target is not limited to the macOS/blog route. The blog is used as protocol evidence for the success boundary: a real keepalive must reach the SPICE display channel, send `DISPLAY_INIT`, and observe display surface traffic. The current tested account uses a Linux/ZTE CAG route, so Linux CAG/ZIME reverse engineering is a first-class path, not a fallback after macOS SCG.
+The Hansiy enterprise-edition blog is used for methodology: source analysis is
+a hypothesis, capture evidence wins, and replay must be proven end to end. Its
+enterprise Windows endpoints are not copied into the family-edition route.
 
 Official client binaries may be used during research only as an oracle for captures and local plaintext extraction. Production protocol mode must replace them with Node protocol code and must fail closed before sending uncertain auth/SPICE packets.
 
