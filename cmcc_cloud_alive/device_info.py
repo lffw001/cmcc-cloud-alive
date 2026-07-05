@@ -1,6 +1,5 @@
 """Small stdlib replacement for the official getDeviceInfos() payload."""
 
-import os
 import shutil
 import socket
 

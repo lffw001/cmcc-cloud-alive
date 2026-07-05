@@ -13,7 +13,7 @@ import os
 import socket
 import struct
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional, Tuple
 
 TERMINAL_GUID = "31BF5444-86E0-4D5D-B1AB-A42FFBAC72C9"

@@ -31,7 +31,6 @@ from dataclasses import dataclass
 from typing import Optional, Tuple
 
 from .zte_connect_params import InnerConnectParams
-from .zte_route import OuterCAGTarget
 
 
 # --- session info ----------------------------------------------------------

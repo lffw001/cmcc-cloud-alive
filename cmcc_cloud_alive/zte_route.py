@@ -16,7 +16,6 @@ responses are AES-CBC security envelopes decoded by zte_security.
 import json
 import os
 import ssl
-import threading
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
@@ -32,10 +31,8 @@ from .zte_raw_spice import (
     RawMainHandshake,
     RawState,
     RawSubChannelHandshake,
-    ReadRawMessage,
     WriteRawMessage,
     keepaliveRawSpiceLoop,
-    rawMessageWithPrefix,
 )
 
 # --- constants (mirror Go client.go) ---------------------------------------
