@@ -1,0 +1,67 @@
+{
+  "applied_at": "2026-07-04T08:58:38.728864Z",
+  "base_graph_hash": "3b38a3dd0ca4c506a2c8fe3a620b5e04bada26adba89895a339d03fb3c928d1b",
+  "base_summary": {
+    "edge_count": 59,
+    "node_count": 49,
+    "workspace_path": "/home/demo/restore/cmcc-cloud-alive"
+  },
+  "changes": [
+    {
+      "action": "update_node",
+      "fields": {
+        "evidence": [
+          "reports/ida-udp-session-source-port-20260704.json：官方 UDP session/source-port 生命周期脱敏证据报告",
+          "cmcc_cloud_alive/rap_zime.py：kcp_udp_session_lifecycle_ida_evidence、localSocketLifecycle、local_bind_host/local_bind_port",
+          "cmcc_cloud_alive/main.py：rap-zime-kcp-auth-from-cag 新增 --local-bind-host/--local-bind-port",
+          "tests/test_python_modules.py：新增 local UDP source bind 单测和 CLI 参数透传断言",
+          "docs/delivery-handoff.md 第 55 节",
+          "python3 -m unittest discover -s tests -p 'test_python_*.py' -v：100 tests OK"
+        ],
+        "progress": 72,
+        "progress_source": "ida_udp_session_evidence_and_local_bind_option_implemented",
+        "requirements": [
+          "优先使用 IDA report/MCP 或 fresh 官方轨迹判断事实，不重复猜测字段",
+          "重新抓官方轨迹时 GUI 点击前必须截图确认并使用窗口内坐标",
+          "不操作 CrossDesk",
+          "下一次 live 短测只到 AUTH_HEAD_ACK/AUTH_ACK/SYNACK，未 SYNACK 前不得创建 ZIME channel 或发送 DISPLAY_INIT",
+          "使用 --local-bind-host/--local-bind-port 只作为 source-port 受控实验，不得把本地 bind 成功当作保活成功"
+        ],
+        "summary": "AUTH_HEAD 无 ACK 风险已从 auth buffer 字段猜测推进到官方 UDP session/source-port 生命周期证据：IDA 显示官方在 deal_udt_using_cag 前会启动 listen_udp_data_thread、创建 listen/UDP fd、调用 udp_get_local_port、创建 TN_UDP_CLD_SOCK fd session、把 KCP 挂入 thread kcp_list。Python probe 已新增 localSocketLifecycle/idaUdpSessionEvidence 和 --local-bind-host/--local-bind-port 实验开关，但仍未 live 验证 AUTH_HEAD_ACK/SYNACK。"
+      },
+      "id": "TF-0044"
+    },
+    {
+      "action": "update_node",
+      "fields": {
+        "evidence": [
+          "reports/ida-udp-session-source-port-20260704.json",
+          "cmcc_cloud_alive/rap_zime.py：run_kcp_auth_sync_probe local bind 参数和报告字段",
+          "cmcc_cloud_alive/main.py：CLI 参数透传",
+          "docs/delivery-handoff.md 第 55 节"
+        ],
+        "progress": 95,
+        "progress_source": "source_port_bind_probe_option_ready_not_live_verified",
+        "summary": "真实 AUTH/SYNACK 短测工具已新增 source-port 受控实验能力：报告会记录 localSocketLifecycle，并可通过 --local-bind-host/--local-bind-port 显式绑定本地 UDP source endpoint。当前尚未执行新的 session-owning live bind 短测，仍未收到 AUTH_HEAD_ACK/AUTH_ACK/SYNACK。"
+      },
+      "id": "TF-0041"
+    },
+    {
+      "action": "update_node",
+      "fields": {
+        "evidence": [
+          "docs/delivery-handoff.md 第 55 节：恢复 UDP session/source-port 证据并实现本地 bind 实验开关",
+          "全局目标仍未到达 AUTH_HEAD_ACK/SYNACK/ZIME channel/DISPLAY_INIT/40 分钟 verified-run"
+        ],
+        "progress": 72,
+        "progress_source": "udp_session_source_port_gap_instrumented_but_display_path_not_done"
+      },
+      "id": "TF-0001"
+    }
+  ],
+  "created_at": "2026-07-04T08:58:38.499470Z",
+  "proposal_id": "TFP-20260704-udp-session-source-port-evidence-bind-option",
+  "rationale": "本轮基于已有 IDA 报告恢复官方 UDP listen/session/source-port 生命周期证据，并给 AUTH/SYNACK probe 增加本地 bind/source-port 实验开关；该进展服务于 AUTH_HEAD 无 ACK 风险排查，但不等同 display path 或保活成功。",
+  "session_id": "session-20260704-udp-session-source-port-evidence-bind-option",
+  "status": "applied"
+}

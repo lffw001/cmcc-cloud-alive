@@ -1,0 +1,152 @@
+{
+  "proposal_id": "TFP-20260704-auth-parity-gap-report",
+  "session_id": "session-20260704-auth-parity-gap-report",
+  "rationale": "本轮按 task-clarifier 对齐后的既有约束继续推进：未操作 GUI/CrossDesk，未执行新的 live 短测；把第 57 节 IDA 结论和 local bind 0 no-ACK 结论固化进 run_kcp_auth_sync_probe 的脱敏报告结构，新增官方生命周期 parity gap 和 do-not-repeat 字段，避免后续重复 type102/accessToken + local bind 0 或 ZTEC-prime 盲测。",
+  "status": "proposed",
+  "changes": [
+    {
+      "action": "add_node",
+      "alias": "auth-parity-gap-report",
+      "node": {
+        "title": "固化 AUTH probe 官方生命周期 parity gap 报告",
+        "kind": "subtask",
+        "status": "done",
+        "summary": "run_kcp_auth_sync_probe 新增 officialParityAssessment，把官方 spice_init_udp_thread/listen_udp_data_thread/init_local_rw_sock_pair_udp/deal_udt_using_cag 生命周期与当前 Python single_udp_socket probe 的差异写入脱敏报告；同时把显式 ephemeral UDP bind 不足以解释 no-ACK 的结论写成 sourcePortHypothesisStatus 和 doNotRepeatWithoutNewEvidence。",
+        "requirements": [
+          "不读取或写出 token、connectStr、accessToken、cpsid、密码、JWT、VM IP、CAG target 或 authBuffer 明文",
+          "不把本轮报告语义增强当成 AUTH_HEAD_ACK、SYNACK、display path 或协议保活成功",
+          "不得再把 g_tcp_listen_port 解释为 outbound UDP source port",
+          "没有新 official trace 或静态证据前，不重复 type102/accessToken + local bind 0 和 ZTEC-prime target 变体盲测"
+        ],
+        "acceptance_criteria": [
+          "run_kcp_auth_sync_probe 报告包含 officialParityAssessment",
+          "localSocketLifecycle 明确标注官方 read loop、IceSocket、thread kcp_list、TCP readiness gate 均未模拟",
+          "显式 local bind 0 且停在 AUTH_HEAD 时，报告标记 explicit_ephemeral_bind_not_sufficient",
+          "交接文档更新到第 58 节",
+          "聚焦单元测试通过"
+        ],
+        "progress": 100,
+        "progress_source": "implemented_tested_handoff_updated",
+        "priority": 1,
+        "difficulty": "medium",
+        "remaining_minutes_min": 0,
+        "remaining_minutes_max": 0,
+        "confidence": 0.9,
+        "context_tags": [
+          "cmcc-cloud-alive",
+          "KCP",
+          "AUTH",
+          "IDA",
+          "parity-gap"
+        ],
+        "evidence": [
+          "cmcc_cloud_alive/rap_zime.py：新增 _kcp_auth_probe_parity_assessment 与 officialParityAssessment 报告字段",
+          "tests/test_python_modules.py：更新 AUTH/SYNACK 与 local bind source-port 测试断言",
+          "docs/delivery-handoff.md 第 58 节",
+          "python3 -m unittest tests.test_python_modules.PythonModuleTests.test_rap_zime_kcp_auth_sync_probe_runs_auth_then_syn tests.test_python_modules.PythonModuleTests.test_rap_zime_kcp_auth_sync_probe_can_bind_local_udp_source -v：2 tests OK"
+        ]
+      }
+    },
+    {
+      "action": "add_edge",
+      "from": "auth-parity-gap-report",
+      "to": "TF-0049",
+      "type": "child_of",
+      "edge": {
+        "reason": "该实现把 TF-0049 恢复到的 UDP/session/source-port 语义转成可审计的 probe 报告字段。",
+        "confidence": 0.9
+      }
+    },
+    {
+      "action": "add_node",
+      "alias": "auth-head-cag-session-binding-next",
+      "node": {
+        "title": "确认 AUTH_HEAD 前官方 CAG/session 绑定行为",
+        "kind": "subtask",
+        "status": "ready",
+        "summary": "当前已排除显式 ephemeral UDP bind 作为充分解释；下一步要通过 fresh official UDP trace 或静态证据确认 deal_udt_using_cag() 前后是否存在 CAG/session 绑定包、AUTH_HEAD 前置包、真实 source endpoint 或 auth result 处理差异。",
+        "requirements": [
+          "优先用已有 IDA JSON/snippet；证据不足再使用合法可用的 IDA Pro MCP",
+          "若必须 GUI 抓 official trace，必须先截图确认 CMCC 客户端窗口和连接按钮，使用窗口内坐标，不操作 CrossDesk",
+          "live 短测必须标注 session-owning，未拿到 SYNACK 前不得创建 ZIME channel 或发送 DISPLAY_INIT",
+          "报告只写结构化脱敏证据，不保存敏感明文"
+        ],
+        "acceptance_criteria": [
+          "确认 AUTH_HEAD 前是否存在额外 UDP/TCP/CAG 绑定包，或证明没有",
+          "确认 Python AUTH_HEAD 目标、source endpoint、syn_id/random_c、auth_type/link_type 与官方路径的差异点",
+          "若拿到 AUTH_HEAD_ACK，才能继续 AUTH_DATA/AUTH_ACK/SYN/SYNACK",
+          "若仍无 ACK，记录明确排除项并更新 task-forest 与交接文档"
+        ],
+        "progress": 0,
+        "progress_source": "new_follow_up_after_source_port_hypothesis_ruled_insufficient",
+        "priority": 1,
+        "difficulty": "high",
+        "remaining_minutes_min": 90,
+        "remaining_minutes_max": 240,
+        "confidence": 0.78,
+        "context_tags": [
+          "cmcc-cloud-alive",
+          "KCP",
+          "CAG",
+          "AUTH_HEAD",
+          "official-trace"
+        ],
+        "evidence": [
+          "docs/delivery-handoff.md 第 56 节：type102/accessToken + local bind 0 live 仍 AUTH_HEAD 无 ACK",
+          "docs/delivery-handoff.md 第 57 节：g_tcp_listen_port 是本地 TCP listen readiness port，不是 UDP source port",
+          "docs/delivery-handoff.md 第 58 节：officialParityAssessment 已固化 do-not-repeat 结论"
+        ]
+      }
+    },
+    {
+      "action": "add_edge",
+      "from": "auth-head-cag-session-binding-next",
+      "to": "TF-0044",
+      "type": "child_of",
+      "edge": {
+        "reason": "该后续任务直接针对 AUTH_HEAD 无 ACK 的剩余高价值原因：官方 CAG/session 绑定或 AUTH_HEAD 前置行为。",
+        "confidence": 0.86
+      }
+    },
+    {
+      "action": "update_node",
+      "id": "TF-0049",
+      "fields": {
+        "status": "done",
+        "progress": 100,
+        "progress_source": "official_udp_source_port_semantics_recovered_and_reported",
+        "summary": "官方 UDP session/source-port 初始化语义已恢复并固化：g_tcp_listen_port 是本地 127.0.0.1 TCP listen readiness port，不是 outbound UDP source port；官方 UDP fd 经 create_fd_session/IceSocket/thread kcp_list 包装后由 send_udt_data(sendto((int)user,...)) 输出。Python probe 已新增 officialParityAssessment，明确当前未模拟官方 read loop、IceSocket、thread kcp_list 与 readiness gate，并把 local bind 0 不足以解释 no-ACK 写入 do-not-repeat。"
+      }
+    },
+    {
+      "action": "update_node",
+      "id": "TF-0044",
+      "fields": {
+        "status": "in_progress",
+        "progress": 85,
+        "progress_source": "source_port_hypothesis_structured_as_insufficient_next_cag_binding",
+        "summary": "AUTH_HEAD 无 ACK 风险进一步收敛：type101/type102/ZTEC-prime/live local bind 0 均未拿到响应；IDA 证据和 report parity gap 已排除 g_tcp_listen_port/ephemeral UDP bind 作为充分解释。下一步应确认 deal_udt_using_cag 前后是否有官方 CAG/session 绑定包、AUTH_HEAD 前置包或 auth result 处理差异。"
+      }
+    },
+    {
+      "action": "update_node",
+      "id": "TF-0010",
+      "fields": {
+        "status": "in_progress",
+        "progress": 100,
+        "progress_source": "handoff_updated_for_auth_parity_gap_report",
+        "summary": "交接文档已更新到第 58 节，记录 AUTH probe 官方生命周期 parity gap、localSocketLifecycle 新字段、local bind 0 不足解释 no-ACK 的结构化结论，以及下一步转向 official CAG/session 绑定或 fresh official UDP trace。"
+      }
+    },
+    {
+      "action": "update_node",
+      "id": "TF-0001",
+      "fields": {
+        "status": "in_progress",
+        "progress": 72.5,
+        "progress_source": "auth_noack_gap_narrowed_but_display_path_not_reached",
+        "summary": "协议 runner 仍未到达 AUTH_HEAD_ACK/SYNACK/ZIME channel/DISPLAY_INIT/40 分钟 verified-run；本轮把 AUTH no-ACK 的 source-port 假设收敛为不足解释，并新增机器可读 parity gap，下一步转向官方 CAG/session 绑定或 fresh official UDP trace。"
+      }
+    }
+  ]
+}

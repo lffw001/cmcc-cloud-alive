@@ -1,0 +1,135 @@
+{
+  "applied_at": "2026-07-03T12:01:45.342305Z",
+  "base_graph_hash": "97dca640ff55304e092c9dbfc095be0a37815c8391caef6f3cb42e2222b7a9cc",
+  "base_summary": {
+    "edge_count": 16,
+    "node_count": 15,
+    "workspace_path": "/home/demo/restore/cmcc-cloud-alive"
+  },
+  "changes": [
+    {
+      "action": "add_node",
+      "alias": "official-vdi-instant-exit-risk",
+      "node": {
+        "acceptance_criteria": [
+          "定位 resultCodeOne 7 / disconnect 回调的原因",
+          "官方客户端能稳定进入云桌面并产生 display path trace",
+          "新的 analyze-rap-zime 报告通过 check-rap-zime-runner-input --require-templates"
+        ],
+        "confidence": 0.86,
+        "difficulty": "high",
+        "evidence": [
+          "reports/screenshots/official-client-after-mousedown-click-20260703-194446.png：官方客户端进入正在连接页面",
+          "reports/screenshots/official-client-after-instant-exit-20260703-194610.png：连接后回到列表页",
+          "用户观察：vdi_client 进程只保留不到 5 秒",
+          "reports/zime-transport-20260703-193100-fresh.analysis.final.json：未观察到 DISPLAY_INIT 或 display activity",
+          "reports/rap-zime-20260703-193100-fresh-instant-exit.final.readiness.json：readyForLiveShortTest=false，缺 RAP/ZIME live 短测必要字段"
+        ],
+        "kind": "risk",
+        "priority": 1,
+        "progress": 35,
+        "progress_source": "official_trace_failed_instant_exit_diagnosed",
+        "remaining_minutes_max": 240,
+        "remaining_minutes_min": 60,
+        "requirements": [
+          "不能把本次官方连接页或短暂运行态当作保活成功",
+          "不能用本次 instant-exit trace 直接运行 native bridge live 短测",
+          "后续 GUI 点击仍必须先截图确认目标窗口和卡片，且不操作 CrossDesk",
+          "分辨率变化后不要复用窗口相对坐标；点击前应确认鼠标实际落在官方窗口按钮区域"
+        ],
+        "status": "in_progress",
+        "summary": "2026-07-03 官方客户端点击目标套餐连接后进入连接页，但 uSmartView_VDI_Client / vdi client 只存活不到 5 秒并回到列表页；最终 trace 没有 DISPLAY_INIT、Surface/Draw/MARK 或可用 RAP/ZIME runner input。",
+        "title": "风险：官方 vdi client 瞬退导致 fresh trace 不含 display path"
+      }
+    },
+    {
+      "action": "add_edge",
+      "edge": {
+        "confidence": 0.9,
+        "reason": "官方客户端瞬退直接阻碍 fresh display-path trace 和后续 Python runner 短测。"
+      },
+      "from": "official-vdi-instant-exit-risk",
+      "to": "TF-0001",
+      "type": "child_of"
+    },
+    {
+      "action": "update_node",
+      "fields": {
+        "evidence": [
+          "README.md 当前列出 native bridge、RAP/ZIME scaffold 和未完成项",
+          "docs/protocol-keepalive.md 规定成功必须到 display path 并 verified-run",
+          "最新本地验证 compileall OK，80 tests OK",
+          "最新 live 短测停在 udp_response_pending，ZTEC ack 未收到",
+          "新增 check-rap-zime-runner-input 用于防止旧/不完整 runner input 继续空跑",
+          "2026-07-03 fresh official trace 尝试进入连接页后 vdi client 瞬退，未产生 DISPLAY_INIT/display activity，runner input 不 ready"
+        ],
+        "progress": 43,
+        "progress_source": "fresh_trace_attempt_failed_vdi_instant_exit"
+      },
+      "id": "TF-0001"
+    },
+    {
+      "action": "update_node",
+      "fields": {
+        "evidence": [
+          "reports/zime-transport-20260703-193100-fresh.jsonl：官方连接瞬退 trace",
+          "reports/zime-transport-20260703-193100-fresh.analysis.final.json：未观察到 DISPLAY_INIT/display activity",
+          "reports/rap-zime-20260703-193100-fresh-instant-exit.final.readiness.json：缺 RAP tunnel、UDP target、ZTEC target、RAP template 和 send templates",
+          "docs/delivery-handoff.md 第 28 节记录本次失败结论和下一步"
+        ],
+        "progress": 25,
+        "progress_source": "fresh_official_trace_attempt_failed_instant_exit",
+        "requirements": [
+          "不打印敏感连接材料",
+          "trace 必须包含 UDP target、tunnel id、ZTEC target、socket remote、rapDataFrameSendTemplates",
+          "如果必须触碰官方窗口，先截图确认，不操作 CrossDesk",
+          "分辨率变化后不要复用窗口相对坐标；点击前确认鼠标实际落在官方窗口按钮区域"
+        ],
+        "status": "in_progress",
+        "summary": "已尝试重新抓取当前 Win10 环境 official trace，但官方 vdi client 连接后不到 5 秒瞬退；本次 trace 不含 display path，也无法生成 ready runner input。下一步需要先定位瞬退原因，再重新抓稳定桌面 trace。"
+      },
+      "id": "TF-0005"
+    },
+    {
+      "action": "update_node",
+      "fields": {
+        "evidence": [
+          "reports/rap-zime-20260703-193100-fresh-instant-exit.final.readiness.json：readyForLiveShortTest=false",
+          "本次官方连接没有到 display path，不能启动 native bridge live 短测"
+        ],
+        "summary": "短测目标仍是获得真实 RAP/ZIME UDP response、ZIME_ReceiveData ok 和 native_channel_created；由于 2026-07-03 fresh official trace 瞬退且 readiness=false，本任务继续等待可用 fresh runner input。"
+      },
+      "id": "TF-0006"
+    },
+    {
+      "action": "update_node",
+      "fields": {
+        "evidence": [
+          "reports/rap-zime-udp-probe-211530-wrap-after-dynamic.json：旧材料 ZTEC ack timeout",
+          "reports/zime-native-bridge-udp-dynamic-auto-len16-split-ztec-211530-wrap-reservefix.json：旧材料 receivedPackets=0",
+          "reports/rap-zime-20260703-193100-fresh-instant-exit.final.readiness.json：fresh instant-exit trace 缺 live 短测必要字段"
+        ],
+        "progress": 45,
+        "progress_source": "fresh_trace_failed_before_runner_input",
+        "summary": "旧材料仍不可靠；2026-07-03 重新抓官方 trace 又因 vdi client 瞬退未产出 RAP/ZIME UDP runner input，风险从“旧材料过期”扩展为“当前官方桌面链路未稳定进入 display path”。"
+      },
+      "id": "TF-0009"
+    },
+    {
+      "action": "update_node",
+      "fields": {
+        "evidence": [
+          "docs/delivery-handoff.md 第 28 节记录官方连接瞬退、最终 trace/readiness 结论、GUI 坐标风险和下一步诊断路径"
+        ],
+        "progress": 100,
+        "progress_source": "delivery_handoff_section_28_added"
+      },
+      "id": "TF-0010"
+    }
+  ],
+  "created_at": "2026-07-03T12:01:45.170304Z",
+  "proposal_id": "TFP-20260703-official-instant-exit",
+  "rationale": "本轮重新抓官方轨迹时，官方客户端进入连接页后 uSmartView_VDI_Client / vdi client 只存活不到 5 秒，最终 trace 未观察到 DISPLAY_INIT 或 display activity，runner input 不具备 live 短测条件；需要把该失败事实、GUI 坐标风险和下一步诊断写入任务森林，避免误把瞬退 trace 当成 fresh 成功材料。",
+  "session_id": "session-20260703-official-instant-exit",
+  "status": "applied"
+}

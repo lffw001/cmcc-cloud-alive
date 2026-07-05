@@ -1,0 +1,128 @@
+{
+  "proposal_id": "TFP-20260704-stale-runner-input-gate",
+  "session_id": "session-20260704-stale-runner-input-gate",
+  "rationale": "本轮继续对齐协议保活任务后，确认 2026-07-02 完整 runner input 与 2026-07-03 no-probe pcap metadata 都不能继续作为 session-owning live 短测输入；需要把 stale gate 证据写入任务森林，避免重复使用旧材料空跑 UDP/native probe。",
+  "status": "proposed",
+  "changes": [
+    {
+      "action": "add_node",
+      "alias": "stale-runner-input-gate",
+      "node": {
+        "title": "确认旧 runner input 已过期并阻止重复 live 空测",
+        "kind": "subtask",
+        "status": "done",
+        "summary": "用现有 runner input readiness freshness gate 复核旧完整 runner input 和 no-probe pcap metadata。结论是 2026-07-02 完整 runner input 结构曾 ready 但已 stale；2026-07-03 pcap metadata 既缺 RAP/ZTEC/template 字段又 stale，二者都不能继续作为 session-owning live 短测输入。",
+        "requirements": [
+          "旧 trace-derived runner input 只能作为离线字段/模板研究样本",
+          "session-owning live 短测必须先获得 fresh runner input 或 fresh SYNACK 所需的有效会话上下文",
+          "不得把 stale readiness 报告当作保活成功证明"
+        ],
+        "acceptance_criteria": [
+          "生成 rap-zime-20260702-211530-wrap-template-dynamic.stale-readiness-20260704.json",
+          "生成 official-no-ldpreload-active-20260703-225949.pcap-stale-readiness-20260704.json",
+          "docs/delivery-handoff.md 第 41 节记录结论",
+          "全量 Python 测试通过"
+        ],
+        "progress": 100,
+        "progress_source": "readiness_reports_generated_and_documented",
+        "priority": 1,
+        "difficulty": "low",
+        "remaining_minutes_min": 0,
+        "remaining_minutes_max": 0,
+        "confidence": 0.92,
+        "context_tags": [
+          "cmcc-cloud-alive",
+          "runner-input",
+          "freshness",
+          "live-short-test"
+        ],
+        "evidence": [
+          "reports/rap-zime-20260702-211530-wrap-template-dynamic.stale-readiness-20260704.json：readyForLiveShortTest=false，仅 missing stale，ageSeconds 约 47578，maxAgeSeconds=1800",
+          "reports/official-no-ldpreload-active-20260703-225949.pcap-stale-readiness-20260704.json：readyForLiveShortTest=false，缺 RAP primary tunnel id、RAP data-frame template、ZTEC target、send-side templates，且 stale",
+          "docs/delivery-handoff.md 第 41 节",
+          "python3 -m unittest discover -s tests -p 'test_python_*.py' -v：86 tests OK"
+        ]
+      }
+    },
+    {
+      "action": "add_edge",
+      "from": "stale-runner-input-gate",
+      "to": "TF-0029",
+      "type": "child_of",
+      "edge": {
+        "reason": "确认旧 runner input 不能继续用于 live 空测，是获取 fresh SYNACK/会话上下文任务的收敛前置。",
+        "confidence": 0.9
+      }
+    },
+    {
+      "action": "add_edge",
+      "from": "stale-runner-input-gate",
+      "to": "TF-0006",
+      "type": "contributes_to",
+      "edge": {
+        "reason": "该结论直接阻止用 stale runner input 启动 native bridge live 短测。",
+        "confidence": 0.88
+      }
+    },
+    {
+      "action": "update_node",
+      "id": "TF-0029",
+      "fields": {
+        "summary": "旧 no-probe pcap metadata target 对 len=mtu 且默认 outband 的 client SYN 仍无响应；当前已排除两个本地编码偏差，并进一步确认旧完整 runner input 与 pcap metadata 都已过 freshness gate。下一步必须获取 fresh 官方轨迹/会话上下文，或继续恢复 syn_id、conv、auth、socket/session 绑定参数，直到服务端返回 SYNACK。",
+        "progress": 28,
+        "progress_source": "stale_runner_input_gate_confirmed_after_syn_encoding_fixes",
+        "requirements": [
+          "优先刷新或恢复会话上下文，不重复只用旧 metadata target 空跑",
+          "旧 trace-derived runner input 只能作为离线字段/模板研究样本，不能作为 live 短测输入",
+          "任何 GUI 点击前必须截图确认并使用窗口内坐标，不操作 CrossDesk",
+          "拿到 SYNACK 前不得创建 ZIME channel 或声称 display path 成功",
+          "不输出 token、connectStr、accessToken、cpsid、手机号、密码、JWT、vmId、userServiceId 等敏感明文",
+          "若要触发官方客户端抓新轨迹，必须先截图确认畅享版客户端窗口和连接按钮位置"
+        ],
+        "evidence": [
+          "reports/kcp-sync-probe-pcap-metadata-lenmtu-outband-20260704.json：bytesSent=21、clientSyn.len=1400、wndFlags=stream,outband,quic、synackReceived=false",
+          "reports/ida-libspice-zime-analysis-20260704-rerun.json：deal_kcp_sync_ack_cmd 在 SYNACK 后才调用 QUIC_create_data_channel",
+          "docs/delivery-handoff.md 第 39 节记录 client SYN len 纠偏",
+          "docs/delivery-handoff.md 第 40 节记录 outband 默认纠偏",
+          "reports/rap-zime-20260702-211530-wrap-template-dynamic.stale-readiness-20260704.json：旧完整 runner input 已 stale",
+          "reports/official-no-ldpreload-active-20260703-225949.pcap-stale-readiness-20260704.json：pcap metadata 缺字段且 stale",
+          "docs/delivery-handoff.md 第 41 节记录 stale gate 结论"
+        ]
+      }
+    },
+    {
+      "action": "update_node",
+      "id": "TF-0005",
+      "fields": {
+        "summary": "fresh official trace 路线已从 LD_PRELOAD probe 转为 no-probe 外部采样；当前 pcap 已确认稳定外层 UDP target，但还没有可用 runner input。本轮 freshness gate 进一步确认该 pcap metadata 已 stale，下一步需要重新抓 fresh trace 或从静态分析补 RAP/ZIME 字段。",
+        "progress": 60,
+        "progress_source": "pcap_metadata_stale_and_still_missing_runner_input_fields",
+        "evidence": [
+          "docs/delivery-handoff.md 第 30 节：无 probe 官方短测成功进入 Win10，uSmartView_VDI_ 存活超过 7 分钟",
+          "docs/delivery-handoff.md 第 32 节：low probe 官方验证失败，下一步切到无 LD_PRELOAD 外部抓取",
+          "docs/delivery-handoff.md 第 33 节：pcap metadata 分析工具落地，真实 pcap 候选 UDP target 为 111.31.3.182:8899",
+          "reports/official-no-ldpreload-active-20260703-225949.pcap-runner-readiness.json：缺 primaryTunnelId、ZTEC target、RAP data-frame template 和 send templates",
+          "reports/official-no-ldpreload-active-20260703-225949.pcap-stale-readiness-20260704.json：pcap metadata-only 输入已 stale，仍不具备 live 短测条件"
+        ]
+      }
+    },
+    {
+      "action": "update_node",
+      "id": "TF-0006",
+      "fields": {
+        "summary": "短测目标仍是获得真实 RAP/ZIME UDP response、ZIME_ReceiveData ok 和 native_channel_created；由于 2026-07-03 fresh official trace 瞬退且 readiness=false，2026-07-02 完整 runner input 又已 stale，本任务继续等待 fresh runner input 或 fresh SYNACK 前置条件。",
+        "requirements": [
+          "显式标注 session-owning/顶号",
+          "使用 --udp-ztec-prime、--udp-rap-template-mode auto，并优先 len16 + split",
+          "只有 native_channel_created 后才创建 stream",
+          "不得使用 stale runner input 启动 live 短测"
+        ],
+        "evidence": [
+          "reports/rap-zime-20260703-193100-fresh-instant-exit.final.readiness.json：readyForLiveShortTest=false",
+          "本次官方连接没有到 display path，不能启动 native bridge live 短测",
+          "reports/rap-zime-20260702-211530-wrap-template-dynamic.stale-readiness-20260704.json：旧完整 runner input 已 stale"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,378 @@
+{
+  "ok": true,
+  "inputFiles": [
+    "/home/demo/抓包/linux客户端cmcc-cloudpc-connected-20260701-130759-filtered.pcapng"
+  ],
+  "baselineFiles": [],
+  "sourceFiles": [],
+  "records": 0,
+  "baselineRecords": 0,
+  "observedWindow": {
+    "first": "",
+    "last": "",
+    "durationSeconds": null
+  },
+  "uniqueEndpoints": 0,
+  "endpointCounts": {},
+  "endpointDetails": [],
+  "candidates": [],
+  "decodedPayloadFindings": {
+    "decodedPayloads": 0,
+    "skippedFiles": [],
+    "classCounts": {},
+    "matchedTerms": {},
+    "enterpriseStyleKeepaliveReferences": [],
+    "findings": [],
+    "conclusion": "no decoded JSON payloads were found in JSONL inputs"
+  },
+  "binaryCaptureFindings": {
+    "inputFiles": [
+      "/home/demo/抓包/linux客户端cmcc-cloudpc-connected-20260701-130759-filtered.pcapng"
+    ],
+    "visibleHosts": {
+      "soho.komect.com": 1,
+      "uac.zte.com.cn": 1,
+      "market.test.zte.com.cn": 1
+    },
+    "visibleIpPorts": {
+      "127.0.0.1:8101": 2,
+      "111.31.3.182:8899": 1,
+      "39.173.116.232:28002": 1,
+      "39.173.116.232:28897": 1,
+      "10.10.2.242:18446": 1
+    },
+    "visibleUrls": [
+      "https://111.31.3.182:8899/cs/cs_connectDesktop.action",
+      "https://uac.zte.com.cn/",
+      "http://39.173.116.232:28002/vops-autoops-protocol/web/tr069",
+      "http://127.0.0.1:8101/toolbox/download",
+      "http://127.0.0.1:8101/toolbox/download",
+      "https://39.173.116.232:28897/vops-autoops-protocol/web/tr069",
+      "http://ip:port/idp/oauth2/authorize",
+      "https://10.10.2.242:18446/irai-filedownload",
+      "https://market.test.zte.com.cn/zte-paas-exchange-bff/zte-paas-exchange-api"
+    ],
+    "visiblePaths": [
+      {
+        "path": "/cs/cs_connectDesktop.action",
+        "apiPath": "/cs/cs_connectDesktop.action",
+        "count": 2,
+        "classification": {
+          "class": "connect_material_or_boot",
+          "desktopKeepaliveEvidence": "not_http_session_keepalive",
+          "risk": "can occupy or replace an active desktop session"
+        }
+      },
+      {
+        "path": "/vops-autoops-protocol/web/tr069",
+        "apiPath": "/vops-autoops-protocol/web/tr069",
+        "count": 2,
+        "classification": {
+          "class": "external_config_or_support_url",
+          "desktopKeepaliveEvidence": "none",
+          "risk": "external support/config/download URL visible in client payload; not a desktop session holder"
+        }
+      },
+      {
+        "path": "/toolbox/download",
+        "apiPath": "/toolbox/download",
+        "count": 2,
+        "classification": {
+          "class": "external_config_or_support_url",
+          "desktopKeepaliveEvidence": "none",
+          "risk": "external support/config/download URL visible in client payload; not a desktop session holder"
+        }
+      },
+      {
+        "path": "/idp/oauth2/authorize",
+        "apiPath": "/idp/oauth2/authorize",
+        "count": 1,
+        "classification": {
+          "class": "external_config_or_support_url",
+          "desktopKeepaliveEvidence": "none",
+          "risk": "external support/config/download URL visible in client payload; not a desktop session holder"
+        }
+      },
+      {
+        "path": "/irai-filedownload",
+        "apiPath": "/irai-filedownload",
+        "count": 1,
+        "classification": {
+          "class": "external_config_or_support_url",
+          "desktopKeepaliveEvidence": "none",
+          "risk": "external support/config/download URL visible in client payload; not a desktop session holder"
+        }
+      },
+      {
+        "path": "/zte-paas-exchange-bff/zte-paas-exchange-api",
+        "apiPath": "/zte-paas-exchange-bff/zte-paas-exchange-api",
+        "count": 1,
+        "classification": {
+          "class": "external_config_or_support_url",
+          "desktopKeepaliveEvidence": "none",
+          "risk": "external support/config/download URL visible in client payload; not a desktop session holder"
+        }
+      }
+    ],
+    "httpRequestLines": [],
+    "matchedKeepaliveTerms": {
+      "connectStr": 3,
+      "connectInfo": 1,
+      "sysConfig": 1,
+      "opDesktopTimeout": 1,
+      "enableVdiDetectVm": 1,
+      "html5EnableStream": 1,
+      "tokenInfo": 1,
+      "vdiPingTimeout": 1,
+      "instanceId": 1
+    },
+    "tshark": {
+      "available": true,
+      "tool": "/usr/bin/tshark",
+      "inputFiles": [
+        "/home/demo/抓包/linux客户端cmcc-cloudpc-connected-20260701-130759-filtered.pcapng"
+      ],
+      "errors": [],
+      "conversationCount": 42,
+      "topConversations": [
+        {
+          "conversation": "111.31.3.182:8899 <-> 192.168.1.48:53229",
+          "frames": 7697
+        },
+        {
+          "conversation": "111.31.3.182:8899 <-> 192.168.1.48:53019",
+          "frames": 3428
+        },
+        {
+          "conversation": "127.0.0.1:39484 <-> 127.0.0.1:41955",
+          "frames": 2366
+        },
+        {
+          "conversation": "127.0.0.1:40441 <-> 127.0.0.1:53768",
+          "frames": 437
+        },
+        {
+          "conversation": "127.0.0.1:39540 <-> 127.0.0.1:41955",
+          "frames": 294
+        },
+        {
+          "conversation": "111.31.3.182:8899 <-> 192.168.1.48:44405",
+          "frames": 252
+        },
+        {
+          "conversation": "127.0.0.1:40441 <-> 127.0.0.1:53820",
+          "frames": 237
+        },
+        {
+          "conversation": "127.0.0.1:36262 <-> 127.0.0.1:51000",
+          "frames": 165
+        },
+        {
+          "conversation": "111.31.3.182 <-> 192.168.1.48",
+          "frames": 162
+        },
+        {
+          "conversation": "127.0.0.1:39518 <-> 127.0.0.1:41955",
+          "frames": 114
+        },
+        {
+          "conversation": "127.0.0.1:40441 <-> 127.0.0.1:53806",
+          "frames": 83
+        },
+        {
+          "conversation": "127.0.0.1:39480 <-> 127.0.0.1:41955",
+          "frames": 70
+        },
+        {
+          "conversation": "112.17.28.226:443 <-> 192.168.1.48:43888",
+          "frames": 40
+        },
+        {
+          "conversation": "111.31.3.182:8899 <-> 192.168.1.48:58682",
+          "frames": 40
+        },
+        {
+          "conversation": "127.0.0.1:39498 <-> 127.0.0.1:41955",
+          "frames": 36
+        },
+        {
+          "conversation": "127.0.0.1:39530 <-> 127.0.0.1:41955",
+          "frames": 36
+        },
+        {
+          "conversation": "127.0.0.1:39488 <-> 127.0.0.1:41955",
+          "frames": 34
+        },
+        {
+          "conversation": "127.0.0.1:39502 <-> 127.0.0.1:41955",
+          "frames": 34
+        },
+        {
+          "conversation": "111.31.3.182:8899 <-> 192.168.1.48:58704",
+          "frames": 31
+        },
+        {
+          "conversation": "127.0.0.1:38875 <-> 127.0.0.1:52697",
+          "frames": 28
+        },
+        {
+          "conversation": "111.1.51.48:443 <-> 192.168.1.48:49190",
+          "frames": 27
+        },
+        {
+          "conversation": "127.0.0.1:51000 <-> 127.0.0.1:52040",
+          "frames": 25
+        },
+        {
+          "conversation": "111.1.51.48:443 <-> 192.168.1.48:49196",
+          "frames": 23
+        },
+        {
+          "conversation": "111.31.3.182:8899 <-> 192.168.1.48:39854",
+          "frames": 22
+        },
+        {
+          "conversation": "111.31.3.182:8899 <-> 192.168.1.48:58686",
+          "frames": 21
+        },
+        {
+          "conversation": "111.31.3.182:8899 <-> 192.168.1.48:39868",
+          "frames": 20
+        },
+        {
+          "conversation": "111.31.3.182:8899 <-> 192.168.1.48:58696",
+          "frames": 18
+        },
+        {
+          "conversation": "111.31.3.182:8899 <-> 192.168.1.48:39844",
+          "frames": 17
+        },
+        {
+          "conversation": "112.17.28.226:443 <-> 192.168.1.48:56242",
+          "frames": 16
+        },
+        {
+          "conversation": "112.17.28.226:443 <-> 192.168.1.48:43896",
+          "frames": 16
+        },
+        {
+          "conversation": "111.31.3.182:8899 <-> 192.168.1.48:39872",
+          "frames": 16
+        },
+        {
+          "conversation": "127.0.0.1:40441 <-> 127.0.0.1:53760",
+          "frames": 12
+        },
+        {
+          "conversation": "111.31.3.182:8899 <-> 192.168.1.48:47728",
+          "frames": 12
+        },
+        {
+          "conversation": "111.31.3.182:8899 <-> 192.168.1.48:47734",
+          "frames": 12
+        },
+        {
+          "conversation": "111.1.51.48:443 <-> 192.168.1.48:49176",
+          "frames": 9
+        },
+        {
+          "conversation": "192.168.1.48:38890 <-> 39.173.116.62:8883",
+          "frames": 8
+        },
+        {
+          "conversation": "127.0.0.1:40441 <-> 127.0.0.1:53784",
+          "frames": 7
+        },
+        {
+          "conversation": "127.0.0.1:40441 <-> 127.0.0.1:53790",
+          "frames": 7
+        },
+        {
+          "conversation": "127.0.0.1:40441 <-> 127.0.0.1:53780",
+          "frames": 7
+        },
+        {
+          "conversation": "127.0.0.1:40441 <-> 127.0.0.1:53776",
+          "frames": 7
+        },
+        {
+          "conversation": "127.0.0.1:38875 <-> 127.0.0.1:52896",
+          "frames": 6
+        },
+        {
+          "conversation": "127.0.0.1:38875 <-> 127.0.0.1:53424",
+          "frames": 2
+        }
+      ],
+      "topRemotePorts": {
+        "8899": 11586,
+        "53229": 7697,
+        "53019": 3428,
+        "44405": 252,
+        "443": 131,
+        "43888": 40,
+        "58682": 40,
+        "58704": 31,
+        "49190": 27,
+        "49196": 23,
+        "39854": 22,
+        "58686": 21,
+        "39868": 20,
+        "58696": 18,
+        "39844": 17,
+        "56242": 16,
+        "43896": 16,
+        "39872": 16,
+        "47728": 12,
+        "47734": 12,
+        "49176": 9,
+        "38890": 8,
+        "8883": 8
+      },
+      "tlsServerNames": {
+        "soho.komect.com": 1
+      },
+      "httpHosts": {},
+      "httpRequestUris": {},
+      "dnsQueries": {},
+      "conclusion": "pcap contains TLS SNI but no plaintext HTTP request fields"
+    },
+    "transportSignals": {
+      "sohoHostVisible": true,
+      "cag8899Visible": true,
+      "mqtt8883Visible": false,
+      "loopbackVisible": true,
+      "opentelemetryVisible": true,
+      "spiceOrSdkSuccessVisible": true
+    },
+    "conclusion": "binary capture exposes visible strings/URLs only; use HAR or TLS decryption for replayable HTTP paths"
+  },
+  "officialTimerMatrix": [],
+  "sessionOwningFallbackCandidates": [],
+  "excludedByClass": {},
+  "enterpriseBlogEndpoints": {
+    "present": [],
+    "absent": [
+      "/resource/desktopUptime",
+      "/session/machineConnect",
+      "/machine/pushConnectEventData"
+    ]
+  },
+  "visibleConnectedTimers": [],
+  "httpOnlyKeepaliveEvidence": {
+    "verdict": "no_http_desktop_keepalive_candidate_found",
+    "reason": "No desktop-session HTTP endpoint was visible in this capture.",
+    "successSignal": "Only a long http-session-verify run can set desktopKeepaliveProven=true.",
+    "pureHttpDesktopEndpointFound": false,
+    "visibleTimersOnly": false,
+    "sessionOwningFallbackFound": false,
+    "requiredProof": [
+      "family runtime capture endpoint",
+      "pure Python replay accepted by service",
+      "no 4043 other-login/session replacement",
+      "cloud desktop remains running past idle shutdown window"
+    ]
+  },
+  "verdict": "no_http_desktop_keepalive_candidate_found",
+  "nextStep": "Run a Reqable HAR capture while the official family client is already inside the desktop; current input did not expose a desktop-session HTTP endpoint."
+}

@@ -1,104 +1,91 @@
 # Research Notes
 
-This file records external reverse-engineering references that may inform the
-workflow, without merging their protocol assumptions into this project.
+## External References
 
-## Enterprise Windows Blog
+- <https://hansiy.net/p/86b7133e>
+- <https://codming.com/posts/cmcc-cloud-computer-keepalive/>
 
-Reference:
+The Hansiy article is valuable for workflow, not for blindly copying protocol
+constants. It targets a different edition/platform. This project targets the
+family Linux client.
 
-```text
-https://hansiy.net/p/86b7133e
-```
+Reusable lessons:
 
-Scope of that article:
+- Source analysis gives hypotheses; capture decides runtime truth.
+- Separate account/login liveness from desktop-session liveness.
+- Preserve business errors; do not hide them as network errors.
+- Validate each protocol layer with a small harmless request before building a
+  loop.
+- Field deletion and replay tests must be done against the family capture, not
+  against another edition's assumptions.
 
-```text
-Product: China Mobile Cloud PC enterprise edition, explicitly non-family edition
-Client: Windows V3.8.2 Electron client
-Route: HTTP API keepalive after Electron deobfuscation and HAR decryption
-Claimed keepalive endpoint: /resource/desktopUptime
-```
+## Family Linux Findings
 
-This project scope:
+The Python implementation currently proves:
 
-```text
-Product: family cloud PC
-Primary route: ordinary cloud-PC HTTP heartbeat over SOHO API
-Fallback route: Linux/ZTE CAG 8899 with ZTEC/ZIME tunnel traffic, only if HTTP is disproved
-Success boundary: powered/running VM stays awake past idle window while no official client or CAG/SPICE traffic is used
-```
+- SOHO signing and RSA request-body encryption are accepted.
+- Password login works.
+- Cloud list works.
+- CAG HTTPS can start or wake the cloud PC and return decoded connection
+  material.
+- `/cc/cloudPc/heartbeat/v2` can be called as a probe.
 
-Do not copy the enterprise Windows protocol fields, endpoints, constants, or
-success definition into this project unless the family Linux route is
-independently captured and proves the same behavior.
+The current captures do not show an HTTP endpoint that keeps the desktop
+session alive without the native desktop transport. HTTP visible timers and
+CAG refresh are rejected as active keepalive routes.
 
-Useful methodology extracted from the article:
+Latest connected-client evidence:
 
-- Treat source-code analysis as a hypothesis, not proof.
-- Prefer actual capture evidence when source analysis and runtime behavior
-  conflict.
-- Build small end-to-end probes for each recovered layer before implementing a
-  long-running keepalive loop.
-- Separate login/account liveness from desktop-session liveness.
-- Validate server acceptance with a harmless endpoint before sending risky
-  auth/session packets.
-- Keep implementation fail-closed when the version, edition, or client platform
-  differs.
-- Do not let failover wrappers convert business errors into network errors.
-  Login-like APIs must surface service `errorCode` values so SMS, trust-device,
-  and MFA branches can be handled explicitly.
-- When implementing device trust flows, preserve all fields shown by the family
-  client source or capture. In the enterprise Windows reference, missing
-  `body.code` caused SMS verification failure; family edition must be verified
-  independently before dropping fields.
-- SMS codes may have a short validity window and a matching resend cooldown.
-  Keep login flows explicit and avoid blind retries that consume the code window.
-- Use field-deletion tests only after a harmless family-edition endpoint is
-  identified. Loose validation in another edition does not prove loose
-  validation here.
+- `/home/demo/下载/soho.komect.com_2026_07_01_15_43_16.har` covers about
+  34m40s while the official client kept the desktop connected.
+- Visible HTTP timers in that capture:
+  `/cc/cloudPc/heartbeat/v2` about every 30 seconds,
+  `/cc/cloudPc/infoReport/v2` about every 121 seconds, and
+  `/system/logReport/config/v2` about every 120/180 seconds.
+- The desktop did not sleep in this capture, but the official native desktop
+  client was connected at the same time. Therefore this is a connected-client
+  baseline, not proof that HTTP alone keeps the desktop alive.
+- Previous 5-minute HTTP replay failed at 25m09s despite accepted heartbeat,
+  infoReport, and point responses. Previous connect-event/CAG research also
+  caused the official macOS client to receive `4043 该云电脑已在其他设备上登录`.
+- `/home/demo/下载/terminalprobe.soho.komect.com_2026_06_30_19_22_00.har`
+  shows Windows connected-client telemetry: heartbeat, infoReport, point, and
+  terminalprobe base/peripheral/performance uploads. It still does not show an
+  enterprise-style `/resource/desktopUptime` endpoint, and terminalprobe remains
+  telemetry.
+- The combined Windows/macOS/Linux/terminalprobe HAR audit in
+  `docs/evidence/cross-platform-har-summary-20260701.json` covers 487 records
+  and 37 endpoints. All endpoints are classified; no unknown HTTP desktop
+  candidate remains, and the enterprise-blog uptime/session endpoints are still
+  absent.
 
-Current family-edition implication after the HTTP-first redirect:
+## Capture Rule
 
-```text
-Do not continue SPICE/CAG as the main path until the ordinary HTTP heartbeat is
-tested properly. The correct process is static family-client audit -> HTTP
-capture/replay -> long powered/running proof. Only if that fails should the
-project return to SPICE/CAG/ZIME.
-```
+The next authoritative artifact should be a ZIME/SPICE trace captured while the
+official family Linux client is inside the desktop. Existing SDK plaintext
+JSONL captures are useful for CAG startup analysis, but they have not exposed a
+desktop-session HTTP endpoint.
 
-## Family Edition Source Audit Update
+For the next protocol trace:
 
-The installed family Linux client contains a separate HTTP heartbeat candidate:
+1. Connect the desktop with the official client on this machine and capture the
+   ZIME probe.
+2. Extract channel/stream creation order and SPICE link/display messages.
+3. Confirm where `DISPLAY_INIT`, Surface creation, MARK, ACK, and PONG appear.
+4. Build the Python protocol runner from that family Linux trace.
+5. Prove it with an independent per-minute power monitor.
 
-```text
-/cc/cloudPc/heartbeat/v2
-```
+## Active Order
 
-This endpoint is not the enterprise Windows blog endpoint
-`/resource/desktopUptime`. The only behavior imported from the enterprise blog
-is the reverse-engineering discipline:
+Docker packaging is abandoned for this project. Keep the implementation focused
+on a local Python/protocol tool until the protocol route is proven.
 
-```text
-source analysis is a hypothesis
-capture/runtime behavior wins
-business errors must remain visible
-do not collapse edition-specific behavior into one protocol
-```
+Route priority:
 
-For family `/cc/cloudPc/heartbeat/v2`, source and runtime currently agree that
-`4043` is the dangerous other-login/kick signal. A runtime response of `4041`
-was accepted by the family client's scheduler semantics because the source only
-stops on `4043`.
+1. RAP/ZIME/SPICE display-channel protocol reproduction.
+2. Independent 40-minute power-state proof.
+3. Only if protocol evidence proves unavoidable session ownership, document the
+   final tool as session-owning rather than non-disruptive.
 
-On 2026-06-30 the ordinary-cloud-PC endpoint version was rechecked:
-
-```text
-ordinary cloud PC: /cc/cloudPc/heartbeat/v2
-time-zone / entertainment branch: /timeZone/heartbeat/v1
-```
-
-A direct probe with the current family account showed `/cc/cloudPc/heartbeat/v1`
-returns `2000/SUCCESS`, but it is not the ordinary-cloud-PC heartbeat used by
-the current Linux family client source. The implementation therefore stays on
-`/cc/cloudPc/heartbeat/v2`.
+The Codming article is useful methodology and a display-channel hypothesis; it
+is not proof for this family-edition Linux route by itself.

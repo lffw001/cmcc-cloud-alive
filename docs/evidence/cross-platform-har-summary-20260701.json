@@ -1,0 +1,942 @@
+{
+  "ok": true,
+  "inputFiles": [
+    "/home/demo/下载/1.har",
+    "/home/demo/下载/terminalprobe.soho.komect.com_2026_06_30_19_22_00.har",
+    "/home/demo/下载/soho.komect.com_2026_07_01_15_43_16.har",
+    "/home/demo/下载/win系统point.soho.komect.com_2026_07_01_12_54_50.har",
+    "/home/demo/下载/mac客户端soho.komect.com_2026_07_01_13_06_29.har",
+    "/home/demo/下载/mac'第二轮api.apple-cloudkit.com_2026_07_01_14_46_44.har",
+    "/home/demo/下载/linux客户端redirector.gvt1.com_2026_07_01_13_49_53.har"
+  ],
+  "baselineFiles": [],
+  "sourceFiles": [],
+  "records": 488,
+  "baselineRecords": 0,
+  "observedWindow": {
+    "first": "2026-06-30T11:20:12.178000+00:00",
+    "last": "2026-07-01T07:41:57.398000+00:00",
+    "durationSeconds": 73305
+  },
+  "uniqueEndpoints": 37,
+  "endpointCounts": {
+    "POST /point/custom/cc/v1": 171,
+    "POST /terminal/cc/cloudPc/heartbeat/v2": 93,
+    "CONNECT /": 32,
+    "POST /terminal/cc/cloudPc/infoReport/v2": 29,
+    "POST /terminal/system/logReport/config/v2": 22,
+    "POST /terminal/cc/cloudPc/list/v6": 13,
+    "POST /terminal/cc/cloudPc/sublist/v3": 13,
+    "POST /terminal/cc/cloudPc/getDisconnectTime/v1": 12,
+    "POST /terminal/cc/getFirmAuth/v1": 9,
+    "POST /terminal/cc/cloudPc/logout/v2": 9,
+    "POST /terminal/timeZone/display/v1": 8,
+    "POST /terminal/cc/getCommonManual/v1": 7,
+    "POST /terminal/cc/get/feedbackUrl/v2": 7,
+    "POST /terminal/cc/cloudPc/detail/v1": 4,
+    "POST /terminal/cc/cloudPc/switchList/v1": 4,
+    "POST /terminal/cc/checkVersion/v2": 4,
+    "POST /terminal/cc/getCustomerCenterPicUrl/v1": 4,
+    "POST /terminal/system/mqttConnect/v1": 4,
+    "POST /terminal/cc/cloudPc/notice": 4,
+    "POST /terminal/active/claimActivityList/v3": 4,
+    "POST /terminal/timeZone/margin/v1": 3,
+    "POST /terminal/timeZone/balanceDetails/v1": 3,
+    "POST /sc/probe-terminal-portal/peripheral/send/v1": 3,
+    "POST /terminal/login/encryptKey/v1": 3,
+    "POST /terminal/system/settings/v1": 3,
+    "POST /terminal/token/checkToken/v1": 3,
+    "POST /q": 3,
+    "POST /sc/probe-terminal-portal/base/send/v1": 2,
+    "POST /sc/probe-terminal-portal/performance/send/v1": 2,
+    "POST /terminal/cc/getPrivacyVersion/v1": 2,
+    "POST /terminal/cc/collectInfo/v1": 2,
+    "POST /sc/probe-cfg-portal/config/terminal/get/v1": 1,
+    "GET /sohopic/activity/customerCenter-2.png": 1,
+    "GET /sohopic/activity/feebdack01.png": 1,
+    "GET /v4/threatListUpdates:fetch": 1,
+    "POST /terminal/login/sms/send/v1": 1,
+    "POST /terminal/login/sms/login/v1": 1
+  },
+  "endpointDetails": [
+    {
+      "endpoint": "POST /point/custom/cc/v1",
+      "apiPath": "/point/custom/cc/v1",
+      "count": 171,
+      "classification": {
+        "class": "analytics_point",
+        "desktopKeepaliveEvidence": "none_by_itself",
+        "risk": "telemetry; do not treat as keepalive without long proof"
+      },
+      "timing": {
+        "first": "2026-06-30T11:20:17.623000+00:00",
+        "last": "2026-07-01T07:41:57.280000+00:00",
+        "durationSeconds": 73299,
+        "medianIntervalSeconds": 28.93,
+        "minIntervalSeconds": 0.0,
+        "maxIntervalSeconds": 63200.079
+      }
+    },
+    {
+      "endpoint": "POST /terminal/cc/cloudPc/heartbeat/v2",
+      "apiPath": "/cc/cloudPc/heartbeat/v2",
+      "count": 93,
+      "classification": {
+        "class": "official_connected_http_timer",
+        "desktopKeepaliveEvidence": "unproven_timer_only",
+        "risk": "accepted response is not sleep-prevention proof; watch 4043 and powered state"
+      },
+      "timing": {
+        "first": "2026-06-30T11:20:16.280000+00:00",
+        "last": "2026-07-01T07:41:34.076000+00:00",
+        "durationSeconds": 73277,
+        "medianIntervalSeconds": 31.483,
+        "minIntervalSeconds": 5.892,
+        "maxIntervalSeconds": 63206.133
+      }
+    },
+    {
+      "endpoint": "CONNECT /",
+      "apiPath": "/",
+      "count": 32,
+      "classification": {
+        "class": "proxy_tunnel_noise",
+        "desktopKeepaliveEvidence": "none",
+        "risk": "ignore"
+      },
+      "timing": {
+        "first": "2026-06-30T11:20:17.644000+00:00",
+        "last": "2026-07-01T07:19:25.419000+00:00",
+        "durationSeconds": 71947,
+        "medianIntervalSeconds": 20.13,
+        "minIntervalSeconds": 0.0,
+        "maxIntervalSeconds": 63237.819
+      }
+    },
+    {
+      "endpoint": "POST /terminal/cc/cloudPc/infoReport/v2",
+      "apiPath": "/cc/cloudPc/infoReport/v2",
+      "count": 29,
+      "classification": {
+        "class": "official_connected_http_timer",
+        "desktopKeepaliveEvidence": "unproven_timer_only",
+        "risk": "accepted response is not sleep-prevention proof; watch 4043 and powered state"
+      },
+      "timing": {
+        "first": "2026-06-30T11:20:21.962000+00:00",
+        "last": "2026-07-01T07:40:32.428000+00:00",
+        "durationSeconds": 73210,
+        "medianIntervalSeconds": 121.16,
+        "minIntervalSeconds": 32.814,
+        "maxIntervalSeconds": 63237.8
+      }
+    },
+    {
+      "endpoint": "POST /terminal/system/logReport/config/v2",
+      "apiPath": "/system/logReport/config/v2",
+      "count": 22,
+      "classification": {
+        "class": "official_connected_http_timer",
+        "desktopKeepaliveEvidence": "unproven_timer_only",
+        "risk": "accepted response is not sleep-prevention proof; watch 4043 and powered state"
+      },
+      "timing": {
+        "first": "2026-07-01T04:54:08.099000+00:00",
+        "last": "2026-07-01T07:41:26.196000+00:00",
+        "durationSeconds": 10038,
+        "medianIntervalSeconds": 179.524,
+        "minIntervalSeconds": 27.236,
+        "maxIntervalSeconds": 3251.981
+      }
+    },
+    {
+      "endpoint": "POST /terminal/cc/cloudPc/list/v6",
+      "apiPath": "/cc/cloudPc/list/v6",
+      "count": 13,
+      "classification": {
+        "class": "inventory_status_or_config",
+        "desktopKeepaliveEvidence": "none_by_itself",
+        "risk": "safe to inspect, not a desktop session holder"
+      },
+      "timing": {
+        "first": "2026-07-01T04:54:07.920000+00:00",
+        "last": "2026-07-01T07:41:57.266000+00:00",
+        "durationSeconds": 10069,
+        "medianIntervalSeconds": 112.702,
+        "minIntervalSeconds": 24.522,
+        "maxIntervalSeconds": 3426.053
+      }
+    },
+    {
+      "endpoint": "POST /terminal/cc/cloudPc/sublist/v3",
+      "apiPath": "/cc/cloudPc/sublist/v3",
+      "count": 13,
+      "classification": {
+        "class": "inventory_status_or_config",
+        "desktopKeepaliveEvidence": "none_by_itself",
+        "risk": "safe to inspect, not a desktop session holder"
+      },
+      "timing": {
+        "first": "2026-07-01T04:54:07.920000+00:00",
+        "last": "2026-07-01T07:41:57.369000+00:00",
+        "durationSeconds": 10069,
+        "medianIntervalSeconds": 112.872,
+        "minIntervalSeconds": 24.522,
+        "maxIntervalSeconds": 3425.881
+      }
+    },
+    {
+      "endpoint": "POST /terminal/cc/cloudPc/getDisconnectTime/v1",
+      "apiPath": "/cc/cloudPc/getDisconnectTime/v1",
+      "count": 12,
+      "classification": {
+        "class": "idle_timeout_info",
+        "desktopKeepaliveEvidence": "none_by_itself",
+        "risk": "informational disconnect/idle-time query; not a session holder"
+      },
+      "timing": {
+        "first": "2026-07-01T05:05:44.468000+00:00",
+        "last": "2026-07-01T06:41:06.558000+00:00",
+        "durationSeconds": 5722,
+        "medianIntervalSeconds": 1.749,
+        "minIntervalSeconds": 1.448,
+        "maxIntervalSeconds": 5288.804
+      }
+    },
+    {
+      "endpoint": "POST /terminal/cc/cloudPc/logout/v2",
+      "apiPath": "/cc/cloudPc/logout/v2",
+      "count": 9,
+      "classification": {
+        "class": "logout_or_disconnect",
+        "desktopKeepaliveEvidence": "negative_or_cleanup",
+        "risk": "terminates or reports session end"
+      },
+      "timing": {
+        "first": "2026-07-01T04:54:32.443000+00:00",
+        "last": "2026-07-01T07:41:57.398000+00:00",
+        "durationSeconds": 10044,
+        "medianIntervalSeconds": 493.971,
+        "minIntervalSeconds": 54.973,
+        "maxIntervalSeconds": 3425.904
+      }
+    },
+    {
+      "endpoint": "POST /terminal/cc/getFirmAuth/v1",
+      "apiPath": "/cc/getFirmAuth/v1",
+      "count": 9,
+      "classification": {
+        "class": "connect_material_or_boot",
+        "desktopKeepaliveEvidence": "not_http_session_keepalive",
+        "risk": "can occupy or replace an active desktop session"
+      },
+      "timing": {
+        "first": "2026-07-01T04:54:11.009000+00:00",
+        "last": "2026-07-01T07:07:17.911000+00:00",
+        "durationSeconds": 7986,
+        "medianIntervalSeconds": 451.001,
+        "minIntervalSeconds": 33.108,
+        "maxIntervalSeconds": 2698.847
+      }
+    },
+    {
+      "endpoint": "POST /terminal/timeZone/display/v1",
+      "apiPath": "/timeZone/display/v1",
+      "count": 8,
+      "classification": {
+        "class": "inventory_status_or_config",
+        "desktopKeepaliveEvidence": "none_by_itself",
+        "risk": "safe to inspect, not a desktop session holder"
+      },
+      "timing": {
+        "first": "2026-06-30T11:20:14.836000+00:00",
+        "last": "2026-07-01T07:07:19.588000+00:00",
+        "durationSeconds": 71224,
+        "medianIntervalSeconds": 2009.462,
+        "minIntervalSeconds": 4.956,
+        "maxIntervalSeconds": 63232.953
+      }
+    },
+    {
+      "endpoint": "POST /terminal/cc/get/feedbackUrl/v2",
+      "apiPath": "/cc/get/feedbackUrl/v2",
+      "count": 7,
+      "classification": {
+        "class": "inventory_status_or_config",
+        "desktopKeepaliveEvidence": "none_by_itself",
+        "risk": "safe to inspect, not a desktop session holder"
+      },
+      "timing": {
+        "first": "2026-06-30T11:20:14.749000+00:00",
+        "last": "2026-07-01T07:07:19.399000+00:00",
+        "durationSeconds": 71224,
+        "medianIntervalSeconds": 2349.334,
+        "minIntervalSeconds": 4.947,
+        "maxIntervalSeconds": 63232.968
+      }
+    },
+    {
+      "endpoint": "POST /terminal/cc/getCommonManual/v1",
+      "apiPath": "/cc/getCommonManual/v1",
+      "count": 7,
+      "classification": {
+        "class": "inventory_status_or_config",
+        "desktopKeepaliveEvidence": "none_by_itself",
+        "risk": "safe to inspect, not a desktop session holder"
+      },
+      "timing": {
+        "first": "2026-06-30T11:20:14.748000+00:00",
+        "last": "2026-07-01T07:07:19.345000+00:00",
+        "durationSeconds": 71224,
+        "medianIntervalSeconds": 2349.307,
+        "minIntervalSeconds": 5.024,
+        "maxIntervalSeconds": 63232.892
+      }
+    },
+    {
+      "endpoint": "POST /terminal/active/claimActivityList/v3",
+      "apiPath": "/active/claimActivityList/v3",
+      "count": 4,
+      "classification": {
+        "class": "inventory_status_or_config",
+        "desktopKeepaliveEvidence": "none_by_itself",
+        "risk": "safe to inspect, not a desktop session holder"
+      },
+      "timing": {
+        "first": "2026-07-01T04:54:07.946000+00:00",
+        "last": "2026-07-01T06:33:50.246000+00:00",
+        "durationSeconds": 5982,
+        "medianIntervalSeconds": 2703.017,
+        "minIntervalSeconds": 27.154,
+        "maxIntervalSeconds": 3252.129
+      }
+    },
+    {
+      "endpoint": "POST /terminal/cc/checkVersion/v2",
+      "apiPath": "/cc/checkVersion/v2",
+      "count": 4,
+      "classification": {
+        "class": "inventory_status_or_config",
+        "desktopKeepaliveEvidence": "none_by_itself",
+        "risk": "safe to inspect, not a desktop session holder"
+      },
+      "timing": {
+        "first": "2026-07-01T04:54:07.839000+00:00",
+        "last": "2026-07-01T07:31:35.520000+00:00",
+        "durationSeconds": 9447,
+        "medianIntervalSeconds": 3258.657,
+        "minIntervalSeconds": 2695.959,
+        "maxIntervalSeconds": 3493.065
+      }
+    },
+    {
+      "endpoint": "POST /terminal/cc/cloudPc/detail/v1",
+      "apiPath": "/cc/cloudPc/detail/v1",
+      "count": 4,
+      "classification": {
+        "class": "inventory_status_or_config",
+        "desktopKeepaliveEvidence": "none_by_itself",
+        "risk": "safe to inspect, not a desktop session holder"
+      },
+      "timing": {
+        "first": "2026-06-30T11:20:14.793000+00:00",
+        "last": "2026-07-01T07:07:19.454000+00:00",
+        "durationSeconds": 71224,
+        "medianIntervalSeconds": 4698.641,
+        "minIntervalSeconds": 3288.106,
+        "maxIntervalSeconds": 63237.914
+      }
+    },
+    {
+      "endpoint": "POST /terminal/cc/cloudPc/notice",
+      "apiPath": "/cc/cloudPc/notice",
+      "count": 4,
+      "classification": {
+        "class": "inventory_status_or_config",
+        "desktopKeepaliveEvidence": "none_by_itself",
+        "risk": "safe to inspect, not a desktop session holder"
+      },
+      "timing": {
+        "first": "2026-07-01T04:54:07.920000+00:00",
+        "last": "2026-07-01T06:33:50.187000+00:00",
+        "durationSeconds": 5982,
+        "medianIntervalSeconds": 2705.116,
+        "minIntervalSeconds": 27.095,
+        "maxIntervalSeconds": 3250.056
+      }
+    },
+    {
+      "endpoint": "POST /terminal/cc/cloudPc/switchList/v1",
+      "apiPath": "/cc/cloudPc/switchList/v1",
+      "count": 4,
+      "classification": {
+        "class": "inventory_status_or_config",
+        "desktopKeepaliveEvidence": "none_by_itself",
+        "risk": "safe to inspect, not a desktop session holder"
+      },
+      "timing": {
+        "first": "2026-06-30T11:20:14.793000+00:00",
+        "last": "2026-07-01T07:07:19.495000+00:00",
+        "durationSeconds": 71224,
+        "medianIntervalSeconds": 4698.681,
+        "minIntervalSeconds": 3288.107,
+        "maxIntervalSeconds": 63237.914
+      }
+    },
+    {
+      "endpoint": "POST /terminal/cc/getCustomerCenterPicUrl/v1",
+      "apiPath": "/cc/getCustomerCenterPicUrl/v1",
+      "count": 4,
+      "classification": {
+        "class": "inventory_status_or_config",
+        "desktopKeepaliveEvidence": "none_by_itself",
+        "risk": "safe to inspect, not a desktop session holder"
+      },
+      "timing": {
+        "first": "2026-07-01T04:54:07.882000+00:00",
+        "last": "2026-07-01T06:33:50.043000+00:00",
+        "durationSeconds": 5982,
+        "medianIntervalSeconds": 2704.702,
+        "minIntervalSeconds": 27.497,
+        "maxIntervalSeconds": 3249.962
+      }
+    },
+    {
+      "endpoint": "POST /terminal/system/mqttConnect/v1",
+      "apiPath": "/system/mqttConnect/v1",
+      "count": 4,
+      "classification": {
+        "class": "account_or_system_liveness",
+        "desktopKeepaliveEvidence": "none_by_itself",
+        "risk": "useful for account/token workflow, not desktop-session keepalive"
+      },
+      "timing": {
+        "first": "2026-07-01T04:54:07.915000+00:00",
+        "last": "2026-07-01T06:33:50.043000+00:00",
+        "durationSeconds": 5982,
+        "medianIntervalSeconds": 2704.65,
+        "minIntervalSeconds": 27.491,
+        "maxIntervalSeconds": 3249.987
+      }
+    },
+    {
+      "endpoint": "POST /q",
+      "apiPath": "/q",
+      "count": 3,
+      "classification": {
+        "class": "external_or_unrelated_noise",
+        "desktopKeepaliveEvidence": "none",
+        "risk": "external service path observed in auxiliary capture; ignore for CMCC desktop keepalive"
+      },
+      "timing": {
+        "first": "2026-07-01T06:34:00.076000+00:00",
+        "last": "2026-07-01T06:35:19.980000+00:00",
+        "durationSeconds": 79,
+        "medianIntervalSeconds": 39.952,
+        "minIntervalSeconds": 0.01,
+        "maxIntervalSeconds": 79.894
+      }
+    },
+    {
+      "endpoint": "POST /sc/probe-terminal-portal/peripheral/send/v1",
+      "apiPath": "/sc/probe-terminal-portal/peripheral/send/v1",
+      "count": 3,
+      "classification": {
+        "class": "terminalprobe_telemetry",
+        "desktopKeepaliveEvidence": "none_by_itself",
+        "risk": "Windows/terminal telemetry; accepted response is not desktop-session keepalive proof"
+      },
+      "timing": {
+        "first": "2026-06-30T11:20:17.617000+00:00",
+        "last": "2026-07-01T04:54:32.443000+00:00",
+        "durationSeconds": 63254,
+        "medianIntervalSeconds": 31627.413,
+        "minIntervalSeconds": 16.765,
+        "maxIntervalSeconds": 63238.061
+      }
+    },
+    {
+      "endpoint": "POST /terminal/login/encryptKey/v1",
+      "apiPath": "/login/encryptKey/v1",
+      "count": 3,
+      "classification": {
+        "class": "account_or_system_liveness",
+        "desktopKeepaliveEvidence": "none_by_itself",
+        "risk": "useful for account/token workflow, not desktop-session keepalive"
+      },
+      "timing": {
+        "first": "2026-07-01T04:54:07.158000+00:00",
+        "last": "2026-07-01T06:33:20.454000+00:00",
+        "durationSeconds": 5953,
+        "medianIntervalSeconds": 2976.648,
+        "minIntervalSeconds": 2703.336,
+        "maxIntervalSeconds": 3249.96
+      }
+    },
+    {
+      "endpoint": "POST /terminal/system/settings/v1",
+      "apiPath": "/system/settings/v1",
+      "count": 3,
+      "classification": {
+        "class": "account_or_system_liveness",
+        "desktopKeepaliveEvidence": "none_by_itself",
+        "risk": "useful for account/token workflow, not desktop-session keepalive"
+      },
+      "timing": {
+        "first": "2026-07-01T04:54:07.228000+00:00",
+        "last": "2026-07-01T06:33:20.672000+00:00",
+        "durationSeconds": 5953,
+        "medianIntervalSeconds": 2976.722,
+        "minIntervalSeconds": 2703.49,
+        "maxIntervalSeconds": 3249.954
+      }
+    },
+    {
+      "endpoint": "POST /terminal/timeZone/balanceDetails/v1",
+      "apiPath": "/timeZone/balanceDetails/v1",
+      "count": 3,
+      "classification": {
+        "class": "inventory_status_or_config",
+        "desktopKeepaliveEvidence": "none_by_itself",
+        "risk": "safe to inspect, not a desktop session holder"
+      },
+      "timing": {
+        "first": "2026-06-30T11:20:15.006000+00:00",
+        "last": "2026-07-01T04:54:12.912000+00:00",
+        "durationSeconds": 63237,
+        "medianIntervalSeconds": 31618.953,
+        "minIntervalSeconds": 4.894,
+        "maxIntervalSeconds": 63233.012
+      }
+    },
+    {
+      "endpoint": "POST /terminal/timeZone/margin/v1",
+      "apiPath": "/timeZone/margin/v1",
+      "count": 3,
+      "classification": {
+        "class": "inventory_status_or_config",
+        "desktopKeepaliveEvidence": "none_by_itself",
+        "risk": "safe to inspect, not a desktop session holder"
+      },
+      "timing": {
+        "first": "2026-06-30T11:20:15.006000+00:00",
+        "last": "2026-07-01T04:54:12.911000+00:00",
+        "durationSeconds": 63237,
+        "medianIntervalSeconds": 31618.952,
+        "minIntervalSeconds": 4.949,
+        "maxIntervalSeconds": 63232.956
+      }
+    },
+    {
+      "endpoint": "POST /terminal/token/checkToken/v1",
+      "apiPath": "/token/checkToken/v1",
+      "count": 3,
+      "classification": {
+        "class": "account_or_system_liveness",
+        "desktopKeepaliveEvidence": "none_by_itself",
+        "risk": "useful for account/token workflow, not desktop-session keepalive"
+      },
+      "timing": {
+        "first": "2026-07-01T04:54:08.108000+00:00",
+        "last": "2026-07-01T06:33:50.519000+00:00",
+        "durationSeconds": 5982,
+        "medianIntervalSeconds": 2991.206,
+        "minIntervalSeconds": 2730.345,
+        "maxIntervalSeconds": 3252.066
+      }
+    },
+    {
+      "endpoint": "POST /sc/probe-terminal-portal/base/send/v1",
+      "apiPath": "/sc/probe-terminal-portal/base/send/v1",
+      "count": 2,
+      "classification": {
+        "class": "terminalprobe_telemetry",
+        "desktopKeepaliveEvidence": "none_by_itself",
+        "risk": "Windows/terminal telemetry; accepted response is not desktop-session keepalive proof"
+      },
+      "timing": {
+        "first": "2026-06-30T11:20:12.178000+00:00",
+        "last": "2026-07-01T04:54:15.682000+00:00",
+        "durationSeconds": 63243,
+        "medianIntervalSeconds": 63243.504,
+        "minIntervalSeconds": 63243.504,
+        "maxIntervalSeconds": 63243.504
+      }
+    },
+    {
+      "endpoint": "POST /sc/probe-terminal-portal/performance/send/v1",
+      "apiPath": "/sc/probe-terminal-portal/performance/send/v1",
+      "count": 2,
+      "classification": {
+        "class": "terminalprobe_telemetry",
+        "desktopKeepaliveEvidence": "none_by_itself",
+        "risk": "Windows/terminal telemetry; accepted response is not desktop-session keepalive proof"
+      },
+      "timing": {
+        "first": "2026-06-30T11:20:47.942000+00:00",
+        "last": "2026-07-01T04:54:32.443000+00:00",
+        "durationSeconds": 63224,
+        "medianIntervalSeconds": 63224.501,
+        "minIntervalSeconds": 63224.501,
+        "maxIntervalSeconds": 63224.501
+      }
+    },
+    {
+      "endpoint": "POST /terminal/cc/collectInfo/v1",
+      "apiPath": "/cc/collectInfo/v1",
+      "count": 2,
+      "classification": {
+        "class": "telemetry_or_privacy_config",
+        "desktopKeepaliveEvidence": "none_by_itself",
+        "risk": "client telemetry/configuration path; not a desktop session holder"
+      },
+      "timing": {
+        "first": "2026-07-01T06:33:50.042000+00:00",
+        "last": "2026-07-01T06:33:50.043000+00:00",
+        "durationSeconds": 0,
+        "medianIntervalSeconds": 0.001,
+        "minIntervalSeconds": 0.001,
+        "maxIntervalSeconds": 0.001
+      }
+    },
+    {
+      "endpoint": "POST /terminal/cc/getPrivacyVersion/v1",
+      "apiPath": "/cc/getPrivacyVersion/v1",
+      "count": 2,
+      "classification": {
+        "class": "telemetry_or_privacy_config",
+        "desktopKeepaliveEvidence": "none_by_itself",
+        "risk": "client telemetry/configuration path; not a desktop session holder"
+      },
+      "timing": {
+        "first": "2026-07-01T05:48:16.827000+00:00",
+        "last": "2026-07-01T06:33:19.759000+00:00",
+        "durationSeconds": 2702,
+        "medianIntervalSeconds": 2702.932,
+        "minIntervalSeconds": 2702.932,
+        "maxIntervalSeconds": 2702.932
+      }
+    },
+    {
+      "endpoint": "GET /sohopic/activity/customerCenter-2.png",
+      "apiPath": "/sohopic/activity/customerCenter-2.png",
+      "count": 1,
+      "classification": {
+        "class": "static_asset_or_ui",
+        "desktopKeepaliveEvidence": "none",
+        "risk": "static/UI asset; ignore for keepalive"
+      },
+      "timing": {
+        "first": "2026-07-01T04:54:08.119000+00:00",
+        "last": "2026-07-01T04:54:08.119000+00:00",
+        "durationSeconds": 0,
+        "medianIntervalSeconds": null,
+        "minIntervalSeconds": null,
+        "maxIntervalSeconds": null
+      }
+    },
+    {
+      "endpoint": "GET /sohopic/activity/feebdack01.png",
+      "apiPath": "/sohopic/activity/feebdack01.png",
+      "count": 1,
+      "classification": {
+        "class": "static_asset_or_ui",
+        "desktopKeepaliveEvidence": "none",
+        "risk": "static/UI asset; ignore for keepalive"
+      },
+      "timing": {
+        "first": "2026-07-01T04:54:08.124000+00:00",
+        "last": "2026-07-01T04:54:08.124000+00:00",
+        "durationSeconds": 0,
+        "medianIntervalSeconds": null,
+        "minIntervalSeconds": null,
+        "maxIntervalSeconds": null
+      }
+    },
+    {
+      "endpoint": "GET /v4/threatListUpdates:fetch",
+      "apiPath": "/v4/threatListUpdates:fetch",
+      "count": 1,
+      "classification": {
+        "class": "static_asset_or_ui",
+        "desktopKeepaliveEvidence": "none",
+        "risk": "static/UI asset; ignore for keepalive"
+      },
+      "timing": {
+        "first": "2026-07-01T06:33:14.611000+00:00",
+        "last": "2026-07-01T06:33:14.611000+00:00",
+        "durationSeconds": 0,
+        "medianIntervalSeconds": null,
+        "minIntervalSeconds": null,
+        "maxIntervalSeconds": null
+      }
+    },
+    {
+      "endpoint": "POST /sc/probe-cfg-portal/config/terminal/get/v1",
+      "apiPath": "/sc/probe-cfg-portal/config/terminal/get/v1",
+      "count": 1,
+      "classification": {
+        "class": "terminalprobe_config",
+        "desktopKeepaliveEvidence": "none_by_itself",
+        "risk": "probe configuration; not a desktop session holder"
+      },
+      "timing": {
+        "first": "2026-07-01T04:54:08.911000+00:00",
+        "last": "2026-07-01T04:54:08.911000+00:00",
+        "durationSeconds": 0,
+        "medianIntervalSeconds": null,
+        "minIntervalSeconds": null,
+        "maxIntervalSeconds": null
+      }
+    },
+    {
+      "endpoint": "POST /terminal/login/sms/login/v1",
+      "apiPath": "/login/sms/login/v1",
+      "count": 1,
+      "classification": {
+        "class": "account_or_system_liveness",
+        "desktopKeepaliveEvidence": "none_by_itself",
+        "risk": "useful for account/token workflow, not desktop-session keepalive"
+      },
+      "timing": {
+        "first": "2026-07-01T06:33:49.891000+00:00",
+        "last": "2026-07-01T06:33:49.891000+00:00",
+        "durationSeconds": 0,
+        "medianIntervalSeconds": null,
+        "minIntervalSeconds": null,
+        "maxIntervalSeconds": null
+      }
+    },
+    {
+      "endpoint": "POST /terminal/login/sms/send/v1",
+      "apiPath": "/login/sms/send/v1",
+      "count": 1,
+      "classification": {
+        "class": "account_or_system_liveness",
+        "desktopKeepaliveEvidence": "none_by_itself",
+        "risk": "useful for account/token workflow, not desktop-session keepalive"
+      },
+      "timing": {
+        "first": "2026-07-01T06:33:37.045000+00:00",
+        "last": "2026-07-01T06:33:37.045000+00:00",
+        "durationSeconds": 0,
+        "medianIntervalSeconds": null,
+        "minIntervalSeconds": null,
+        "maxIntervalSeconds": null
+      }
+    }
+  ],
+  "candidates": [
+    {
+      "score": 5,
+      "endpoint": "POST /terminal/cc/cloudPc/heartbeat/v2",
+      "apiPath": "/cc/cloudPc/heartbeat/v2",
+      "count": 93,
+      "statusSamples": [
+        "0",
+        "200"
+      ],
+      "reasons": [
+        "keyword:heartbeat",
+        "family source heartbeat route"
+      ],
+      "classification": {
+        "class": "official_connected_http_timer",
+        "desktopKeepaliveEvidence": "unproven_timer_only",
+        "risk": "accepted response is not sleep-prevention proof; watch 4043 and powered state"
+      },
+      "timing": {
+        "first": "2026-06-30T11:20:16.280000+00:00",
+        "last": "2026-07-01T07:41:34.076000+00:00",
+        "durationSeconds": 73277,
+        "medianIntervalSeconds": 31.483,
+        "minIntervalSeconds": 5.892,
+        "maxIntervalSeconds": 63206.133
+      },
+      "requestBody": {
+        "json": true,
+        "encryptedBodyDetected": true,
+        "keys": [
+          "data"
+        ],
+        "replayableJson": false
+      },
+      "responseBody": {
+        "json": true,
+        "encryptedBodyDetected": false,
+        "keys": [
+          "businessCode",
+          "code",
+          "errMsg",
+          "msg"
+        ],
+        "replayableJson": true
+      },
+      "replayCommand": "# HAR body is app-layer encrypted; recover logical JSON first, then: python3 bin/cmcc_cloud_alive.py api-probe /cc/cloudPc/heartbeat/v2 --json '<json>'",
+      "sourceCorrelation": null,
+      "source": "/home/demo/下载/terminalprobe.soho.komect.com_2026_06_30_19_22_00.har",
+      "sample": null
+    }
+  ],
+  "decodedPayloadFindings": {
+    "decodedPayloads": 0,
+    "skippedFiles": [],
+    "classCounts": {},
+    "matchedTerms": {},
+    "enterpriseStyleKeepaliveReferences": [],
+    "findings": [],
+    "conclusion": "no decoded JSON payloads were found in JSONL inputs"
+  },
+  "binaryCaptureFindings": {
+    "inputFiles": [],
+    "visibleHosts": {},
+    "visibleIpPorts": {},
+    "visibleUrls": [],
+    "visiblePaths": [],
+    "httpRequestLines": [],
+    "matchedKeepaliveTerms": {},
+    "tshark": {
+      "available": true,
+      "tool": "/usr/bin/tshark",
+      "inputFiles": [],
+      "errors": [],
+      "conversationCount": 0,
+      "topConversations": [],
+      "topRemotePorts": {},
+      "tlsServerNames": {},
+      "httpHosts": {},
+      "httpRequestUris": {},
+      "dnsQueries": {},
+      "conclusion": "no pcap input"
+    },
+    "transportSignals": {
+      "sohoHostVisible": false,
+      "cag8899Visible": false,
+      "mqtt8883Visible": false,
+      "loopbackVisible": false,
+      "opentelemetryVisible": false,
+      "spiceOrSdkSuccessVisible": false
+    },
+    "conclusion": "no binary captures supplied"
+  },
+  "officialTimerMatrix": [
+    {
+      "endpoint": "POST /terminal/cc/cloudPc/heartbeat/v2",
+      "apiPath": "/cc/cloudPc/heartbeat/v2",
+      "count": 93,
+      "classification": {
+        "class": "official_connected_http_timer",
+        "desktopKeepaliveEvidence": "unproven_timer_only",
+        "risk": "accepted response is not sleep-prevention proof; watch 4043 and powered state"
+      },
+      "timing": {
+        "first": "2026-06-30T11:20:16.280000+00:00",
+        "last": "2026-07-01T07:41:34.076000+00:00",
+        "durationSeconds": 73277,
+        "medianIntervalSeconds": 31.483,
+        "minIntervalSeconds": 5.892,
+        "maxIntervalSeconds": 63206.133
+      }
+    },
+    {
+      "endpoint": "POST /terminal/cc/cloudPc/infoReport/v2",
+      "apiPath": "/cc/cloudPc/infoReport/v2",
+      "count": 29,
+      "classification": {
+        "class": "official_connected_http_timer",
+        "desktopKeepaliveEvidence": "unproven_timer_only",
+        "risk": "accepted response is not sleep-prevention proof; watch 4043 and powered state"
+      },
+      "timing": {
+        "first": "2026-06-30T11:20:21.962000+00:00",
+        "last": "2026-07-01T07:40:32.428000+00:00",
+        "durationSeconds": 73210,
+        "medianIntervalSeconds": 121.16,
+        "minIntervalSeconds": 32.814,
+        "maxIntervalSeconds": 63237.8
+      }
+    },
+    {
+      "endpoint": "POST /terminal/system/logReport/config/v2",
+      "apiPath": "/system/logReport/config/v2",
+      "count": 22,
+      "classification": {
+        "class": "official_connected_http_timer",
+        "desktopKeepaliveEvidence": "unproven_timer_only",
+        "risk": "accepted response is not sleep-prevention proof; watch 4043 and powered state"
+      },
+      "timing": {
+        "first": "2026-07-01T04:54:08.099000+00:00",
+        "last": "2026-07-01T07:41:26.196000+00:00",
+        "durationSeconds": 10038,
+        "medianIntervalSeconds": 179.524,
+        "minIntervalSeconds": 27.236,
+        "maxIntervalSeconds": 3251.981
+      }
+    }
+  ],
+  "sessionOwningFallbackCandidates": [
+    {
+      "endpoint": "POST /terminal/cc/getFirmAuth/v1",
+      "apiPath": "/cc/getFirmAuth/v1",
+      "count": 9,
+      "classification": {
+        "class": "connect_material_or_boot",
+        "desktopKeepaliveEvidence": "not_http_session_keepalive",
+        "risk": "can occupy or replace an active desktop session"
+      },
+      "timing": {
+        "first": "2026-07-01T04:54:11.009000+00:00",
+        "last": "2026-07-01T07:07:17.911000+00:00",
+        "durationSeconds": 7986,
+        "medianIntervalSeconds": 451.001,
+        "minIntervalSeconds": 33.108,
+        "maxIntervalSeconds": 2698.847
+      }
+    }
+  ],
+  "excludedByClass": {
+    "inventory_status_or_config": 13,
+    "account_or_system_liveness": 6,
+    "official_connected_http_timer": 3,
+    "terminalprobe_telemetry": 3,
+    "static_asset_or_ui": 3,
+    "telemetry_or_privacy_config": 2,
+    "analytics_point": 1,
+    "proxy_tunnel_noise": 1,
+    "idle_timeout_info": 1,
+    "logout_or_disconnect": 1,
+    "connect_material_or_boot": 1,
+    "external_or_unrelated_noise": 1,
+    "terminalprobe_config": 1
+  },
+  "enterpriseBlogEndpoints": {
+    "present": [],
+    "absent": [
+      "/resource/desktopUptime",
+      "/session/machineConnect",
+      "/machine/pushConnectEventData"
+    ]
+  },
+  "visibleConnectedTimers": [
+    "/cc/cloudPc/heartbeat/v2",
+    "/cc/cloudPc/infoReport/v2",
+    "/system/logReport/config/v2"
+  ],
+  "httpOnlyKeepaliveEvidence": {
+    "verdict": "visible_connected_timers_only_unproven",
+    "reason": "The capture shows official connected-client HTTP timers, but no independent desktop uptime/session endpoint.",
+    "successSignal": "Only a long http-session-verify run can set desktopKeepaliveProven=true.",
+    "pureHttpDesktopEndpointFound": false,
+    "visibleTimersOnly": true,
+    "sessionOwningFallbackFound": true,
+    "requiredProof": [
+      "family runtime capture endpoint",
+      "pure Python replay accepted by service",
+      "no 4043 other-login/session replacement",
+      "cloud desktop remains running past idle shutdown window"
+    ]
+  },
+  "verdict": "visible_connected_timers_only_unproven",
+  "nextStep": "Run http-session-verify against the visible official timers only as an experiment; do not treat accepted responses as success."
+}

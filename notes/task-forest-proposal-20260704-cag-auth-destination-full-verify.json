@@ -1,0 +1,37 @@
+{
+  "proposal_id": "TFP-20260704-cag-auth-destination-full-verify",
+  "session_id": "session-20260704-cag-auth-destination-full-verify",
+  "rationale": "CAG auth buffer 目标选择按 link_type 修正后，完成 compileall 与全量 Python 单元测试，并把完整验证结果补入 docs/delivery-handoff.md 第 59 节；同步 task-forest 以记录该修正已经过全量验证。",
+  "status": "proposed",
+  "changes": [
+    {
+      "action": "update_node",
+      "id": "TF-0052",
+      "fields": {
+        "status": "done",
+        "progress": 100,
+        "progress_source": "implemented_full_python_tests_passed",
+        "summary": "CAG auth buffer 目标选择已按 IDA link_type 规则修正，并完成聚焦测试、compileall 与全量 Python 单元测试。该修正对齐 builder，不代表 live AUTH_HEAD_ACK/SYNACK/display path 已成功。",
+        "evidence": [
+          "reports/ida-libspice-zime-auth-source-20260704.json：deal_udt_using_cag/deal_udt_using_cag_uac 目标选择伪代码",
+          "cmcc_cloud_alive/rap_zime.py：新增 _cag_material_destination 并更新 type101/type102 material builder",
+          "tests/test_python_modules.py：test_rap_zime_cag_type101_material_uses_link_type_destination_rules",
+          "docs/delivery-handoff.md 第 59 节：补充全量验证",
+          "python3 -m unittest 相关 5 个聚焦测试：OK",
+          "python3 -m compileall -q cmcc_cloud_alive tests scripts/ida_extract_spice_zime.py：OK",
+          "python3 -m unittest discover -s tests -p 'test_python_*.py' -v：Ran 100 tests OK"
+        ]
+      }
+    },
+    {
+      "action": "update_node",
+      "id": "TF-0010",
+      "fields": {
+        "status": "in_progress",
+        "progress": 100,
+        "progress_source": "handoff_updated_with_cag_auth_destination_full_verify",
+        "summary": "交接文档已更新到第 59 节，并补充 CAG auth destination/link_type 修正后的 compileall 与 100 个 Python 单元测试通过结果。"
+      }
+    }
+  ]
+}

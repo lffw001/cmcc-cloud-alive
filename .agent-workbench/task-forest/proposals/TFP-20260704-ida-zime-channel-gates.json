@@ -1,0 +1,163 @@
+{
+  "applied_at": "2026-07-03T22:47:59.523374Z",
+  "base_graph_hash": "d37759844d7f67b906ebd7774907999cd764173944d8831d04b6b189041419ea",
+  "base_summary": {
+    "edge_count": 36,
+    "node_count": 29,
+    "workspace_path": "/home/demo/restore/cmcc-cloud-alive"
+  },
+  "changes": [
+    {
+      "action": "add_node",
+      "alias": "ida-zime-channel-gates",
+      "node": {
+        "acceptance_criteria": [
+          "reports/ida-libspice-zime-analysis-20260704-rerun.json 生成",
+          "reports/ida-libZIMEDataEngine-analysis-20260704.json 生成",
+          "脚本目标函数列表包含 ZIMEDataEngineImpl/Core 内部 CreateDataChannel/CreateDataStream/PrepareForCreateDataChannel",
+          "交接文档记录该结论和下一步"
+        ],
+        "confidence": 0.88,
+        "context_tags": [
+          "cmcc-cloud-alive",
+          "IDA",
+          "ZIME",
+          "KCP",
+          "QUIC"
+        ],
+        "difficulty": "medium",
+        "evidence": [
+          "scripts/ida_extract_spice_zime.py：新增 ZIMEDataEngineImpl/Core 内部符号目标",
+          "reports/ida-libspice-zime-analysis-20260704-rerun.json：QUIC_create_data_channel 从 kcp->dest_ip、kcp->dest_port、kcp->pack_mtu 组装 T_ZIMEChannelContext_C",
+          "reports/ida-libspice-zime-analysis-20260704-rerun.json：deal_kcp_sync_ack_cmd 仅在 SYNACK 后 use_quic 成立时调用 QUIC_create_data_channel",
+          "reports/ida-libZIMEDataEngine-analysis-20260704.json：CreateDataChannel 失败条件包含 callback/external_transport 未设置、engine 未 init、协议非 QUIC/SCTP、channelSize 限制",
+          "reports/ida-libZIMEDataEngine-analysis-20260704.json：ZIMEQuicDataChannel::CreateStream 在 connection 未创建时失败"
+        ],
+        "kind": "subtask",
+        "non_goals": [
+          "不安装或 patch IDA license/keygen",
+          "不操作官方 GUI 或 CrossDesk",
+          "不运行 40 分钟 verified-run"
+        ],
+        "priority": 1,
+        "progress": 100,
+        "progress_source": "ida_reports_generated_and_gate_conditions_documented",
+        "remaining_minutes_max": 0,
+        "remaining_minutes_min": 0,
+        "requirements": [
+          "不把 ZIME_CreateDataChannel ret=0 等同于 display path 成功",
+          "没有 SYNACK/use_quic 和 QUIC connection 前不得继续裸建 stream",
+          "IDA 报告只读取本地二进制，不读取 .tmp/state.json 或敏感会话材料"
+        ],
+        "status": "done",
+        "summary": "已扩展 IDA 提取脚本并重跑 libspice 与 libZIMEDataEngine 报告。libspice 显示 ZIME_CreateDataChannel 使用 KCP 对象的 dest_ip/dest_port/pack_mtu 等协商状态；libZIME 内部 CreateDataChannel 要求 engine init、callback 与 external transport 已设置、协议为 QUIC/SCTP，CreateStream 还要求 QUIC connection 已创建。",
+        "title": "用 IDA 确认 ZIME channel/stream 创建门槛"
+      }
+    },
+    {
+      "action": "add_edge",
+      "edge": {
+        "confidence": 0.9,
+        "reason": "ZIME channel gate 结论直接决定 native bridge 的下一步不能继续裸建 channel/stream，而要先拿 SYNACK/use_quic。"
+      },
+      "from": "ida-zime-channel-gates",
+      "to": "TF-0003",
+      "type": "child_of"
+    },
+    {
+      "action": "add_edge",
+      "edge": {
+        "confidence": 0.88,
+        "reason": "该分析把 fresh SYNACK 任务的必要性从经验判断提升为 IDA 证据。"
+      },
+      "from": "ida-zime-channel-gates",
+      "to": "TF-0029",
+      "type": "contributes_to"
+    },
+    {
+      "action": "update_node",
+      "fields": {
+        "evidence": [
+          "cmcc_cloud_alive/zime_native_bridge.py",
+          "cmcc_cloud_alive/rap_zime.py：新增 KCP client SYN 编码和 run_kcp_sync_probe",
+          "reports/kcp-sync-probe-pcap-metadata-20260704.json：client SYN 已发出但 synackReceived=false",
+          "reports/ida-libspice-zime-analysis-20260704-rerun.json：ZIME_CreateDataChannel 参数来自 KCP/SYNACK 后状态",
+          "reports/ida-libZIMEDataEngine-analysis-20260704.json：CreateDataChannel/CreateStream gate 已确认"
+        ],
+        "progress": 78,
+        "progress_source": "ida_confirmed_zime_channel_gates_after_kcp_syn_probe",
+        "requirements": [
+          "短测必须标注 researchOnly 和 sessionOwning",
+          "没有 SYNACK/use_quic 前不得创建 ZIME channel 或 stream",
+          "没有 native_channel_created status=0 前不得发送 DISPLAY_INIT 或声称 display path 成功",
+          "不要重复只用旧 metadata target 运行 raw ZIME 或 KCP SYN 空测",
+          "下一次 live 路线必须优先 fresh SYNACK 或官方 trace 会话上下文"
+        ],
+        "summary": "native bridge 已能 inspect/call libZIMEDataEngine.so、捕获 packet-out、RAP wrapping、UDP 回灌和 nativeMilestones；KCP client SYN/sync probe 已具备。本轮 IDA 进一步确认 ZIME channel/stream 不能绕过 SYNACK/use_quic 和 QUIC connection gate，下一步应获取 fresh SYNACK 并接入协商状态。"
+      },
+      "id": "TF-0003"
+    },
+    {
+      "action": "update_node",
+      "fields": {
+        "evidence": [
+          "reports/kcp-sync-probe-pcap-metadata-20260704.json：bytesSent=21、synackReceived=false",
+          "reports/ida-libspice-zime-analysis-20260704-rerun.json：deal_kcp_sync_ack_cmd 在 SYNACK 后才调用 QUIC_create_data_channel",
+          "reports/ida-libZIMEDataEngine-analysis-20260704.json：CreateStream 在 QUIC connection 未创建时失败",
+          "docs/delivery-handoff.md 第 38 节记录该缺口"
+        ],
+        "progress": 15,
+        "progress_source": "ida_confirmed_fresh_synack_is_required_gate",
+        "requirements": [
+          "优先刷新或恢复会话上下文，不重复只用旧 metadata target 空跑",
+          "任何 GUI 点击前必须截图确认并使用窗口内坐标，不操作 CrossDesk",
+          "拿到 SYNACK 前不得创建 ZIME channel 或声称 display path 成功",
+          "不输出 token、connectStr、accessToken、cpsid、手机号、密码、JWT、vmId、userServiceId 等敏感明文",
+          "若要触发官方客户端抓新轨迹，必须先截图确认畅享版客户端窗口和连接按钮位置"
+        ],
+        "summary": "旧 no-probe pcap metadata target 对恢复出的 client SYN 无响应；IDA 已确认 SYNACK 后的 use_quic、be_using_stream、outband、pack_mtu、dest_ip/dest_port 和 QUIC connection gate 是进入 native ZIME channel/stream 的必要条件。下一步要么重新抓官方轨迹得到 fresh 会话上下文，要么继续恢复 SYN 参数直到服务端返回 SYNACK。"
+      },
+      "id": "TF-0029"
+    },
+    {
+      "action": "update_node",
+      "fields": {
+        "evidence": [
+          "docs/delivery-handoff.md 第 36 节：KCP sync/SYNACK 前置协商字段已恢复",
+          "docs/delivery-handoff.md 第 37 节：client SYN 构造和 KCP sync probe 已落地",
+          "reports/kcp-sync-probe-pcap-metadata-20260704.json：旧 metadata target 未返回 SYNACK",
+          "reports/ida-libspice-zime-analysis-20260704-rerun.json：ZIME channel 依赖 KCP/SYNACK 后状态",
+          "reports/ida-libZIMEDataEngine-analysis-20260704.json：CreateDataChannel/CreateStream gate 已确认"
+        ],
+        "progress": 73,
+        "progress_source": "ida_confirmed_zime_channel_gates_synack_required"
+      },
+      "id": "TF-0001"
+    },
+    {
+      "action": "record_alignment",
+      "alignment": {
+        "created_at": "2026-07-03T22:47:59.301499Z",
+        "fit": "aligned",
+        "fit_confidence": 0.9,
+        "id": "TFA-20260704-ida-zime-channel-gates",
+        "related_task_ids": [],
+        "user_goal": "继续完成 Codming 博客式协议保活，优先最快验证 display path，同时避免重复旧 metadata target 空测。",
+        "validation_plan": [
+          "重新抓无 LD_PRELOAD 官方轨迹或恢复 SYN 参数",
+          "用 sync probe 得到 synackReceived=true",
+          "把 SYNACK 协商字段接入 native bridge",
+          "观察 native_channel_created status=0、CreateDataStream 成功和 display path 信号"
+        ],
+        "why_not_enough": "仍未拿到 fresh SYNACK，也未观察到 native_channel_created、DISPLAY_INIT 后 display activity 或 40 分钟 verified-run。",
+        "why_this_task": "IDA 证据确认当前阻塞在 SYNACK/use_quic 和 QUIC connection gate，能指导下一步从 fresh 会话上下文入手，而不是继续裸 ZIME packet-out。"
+      },
+      "node_id": "TF-0003"
+    }
+  ],
+  "created_at": "2026-07-03T22:47:59.297287Z",
+  "proposal_id": "TFP-20260704-ida-zime-channel-gates",
+  "rationale": "本轮按 task-clarifier 对齐后继续推进协议保活：优先使用 IDA headless 分析 display path 的 ZIME channel gate。新增 libZIMEDataEngine 内部函数报告，确认裸 ZIME_CreateDataChannel/CreateDataStream 不能绕过 KCP SYNACK/use_quic 和 QUIC connection 建立阶段。",
+  "session_id": "session-20260704-ida-zime-channel-gates",
+  "status": "applied"
+}

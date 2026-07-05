@@ -1,0 +1,106 @@
+{
+  "proposal_id": "TFP-20260704-proxy-linktype-evidence",
+  "session_id": "session-20260704-proxy-linktype-evidence",
+  "rationale": "按第 60 节后的下一步扩展 IDA 提取范围，补充 get_proxy_kcp_dst_ip/get_proxy_kcp_dst_port/get_proxy_type_by_link_type 静态证据，并在 Python runner 中固化脱敏 evidence helper。结论是 get_proxy_kcp_dst_* 选择 KCP socket/连接发送目标，deal_udt_using_cag* 写 auth buffer 内部目标；二者不能混用。第 59 节 link_type builder 规则未被推翻，仍未定位 proxy_sock->data_buf[224] 的可靠写入来源，也未推进到 AUTH_HEAD_ACK/SYNACK/display path。",
+  "status": "proposed",
+  "changes": [
+    {
+      "action": "add_node",
+      "alias": "proxy-linktype-evidence",
+      "node": {
+        "title": "补充 proxy/link_type IDA 证据并固化 KCP 目标来源 helper",
+        "kind": "subtask",
+        "status": "done",
+        "summary": "扩展 IDA 提取脚本并生成 proxy/link_type 小范围报告：get_proxy_kcp_dst_ip/port 确认 CAG KCP 发送目标使用 ag_ip/ag_port；deal_udt_using_cag* 仍确认 auth buffer 内部目标为默认 link_type=11 gateway、ice 139、sock flag 2 才 140。Python 新增 describe_official_kcp_destination_source() 并把脱敏 evidence 写入 type101/type102 summary，明确 notAuthBufferDestination=true。",
+        "requirements": [
+          "IDA 提取只读取本地 .so，不读取运行态敏感文件",
+          "报告和 summary 不保存 IP、端口、token、账号密码、connectStr、authBuffer 明文",
+          "必须区分 KCP socket 发送目标与 CAG auth buffer 内部目标",
+          "不得把本轮静态证据当成 AUTH_HEAD_ACK、SYNACK、display path 或 40 分钟 verified-run 成功"
+        ],
+        "acceptance_criteria": [
+          "TARGET_NAMES 包含 get_proxy_kcp_dst_ip/get_proxy_kcp_dst_port/get_proxy_type_by_link_type",
+          "生成 reports/ida-libspice-zime-proxy-linktype-source-20260704.json",
+          "生成 reports/ida-libspice-zime-proxy-linktype-source-20260704-snippets.txt",
+          "rap_zime.py 新增脱敏 official KCP destination evidence helper",
+          "聚焦测试、compileall 和全量 Python 单元测试通过",
+          "docs/delivery-handoff.md 更新第 61 节"
+        ],
+        "progress": 100,
+        "progress_source": "ida_proxy_linktype_evidence_helper_tests_passed",
+        "priority": 1,
+        "difficulty": "medium",
+        "remaining_minutes_min": 0,
+        "remaining_minutes_max": 0,
+        "confidence": 0.9,
+        "context_tags": [
+          "cmcc-cloud-alive",
+          "KCP",
+          "CAG",
+          "AUTH_HEAD",
+          "IDA",
+          "link_type"
+        ],
+        "evidence": [
+          "reports/ida-libspice-zime-proxy-linktype-source-20260704.json：新增 get_proxy_kcp_dst_* 与 get_proxy_type_by_link_type 伪代码",
+          "reports/ida-libspice-zime-proxy-linktype-source-20260704-snippets.txt：关键函数 snippet",
+          "cmcc_cloud_alive/rap_zime.py：describe_official_kcp_destination_source 与 summary officialKcpDestinationEvidence",
+          "tests/test_python_modules.py：test_rap_zime_describes_official_kcp_destination_source_redacted",
+          "docs/delivery-handoff.md 第 61 节",
+          "python3 -m compileall -q cmcc_cloud_alive tests scripts/ida_extract_spice_zime.py：OK",
+          "python3 -m unittest discover -s tests -p 'test_python_*.py' -v：Ran 101 tests OK"
+        ]
+      }
+    },
+    {
+      "action": "add_edge",
+      "from": "proxy-linktype-evidence",
+      "to": "TF-0051",
+      "type": "child_of",
+      "edge": {
+        "reason": "本轮静态证据直接服务于 AUTH_HEAD 前 CAG/session 绑定排查，明确 get_proxy_kcp_dst_* 与 auth buffer 目标不能混用，并收敛后续 link flag 来源排查。",
+        "confidence": 0.9
+      }
+    },
+    {
+      "action": "update_node",
+      "id": "TF-0051",
+      "fields": {
+        "status": "in_progress",
+        "progress": 55,
+        "progress_source": "proxy_kcp_destination_evidence_added_but_link_flag_source_unknown",
+        "summary": "确认 AUTH_HEAD 前官方 CAG/session 绑定行为的工作继续收敛：已补充 get_proxy_kcp_dst_ip/get_proxy_kcp_dst_port/get_proxy_type_by_link_type 的 IDA 证据，并在 runner summary 中区分 KCP socket 发送目标与 auth buffer 内部目标。第 59 节 link_type 规则未被推翻，但 proxy_sock->data_buf[224] 的可靠写入来源仍未知，仍需从 IceSocket/create_udt_session/read loop 或 fresh official UDP trace 继续排查。"
+      }
+    },
+    {
+      "action": "update_node",
+      "id": "TF-0044",
+      "fields": {
+        "status": "in_progress",
+        "progress": 92,
+        "progress_source": "kcp_destination_vs_auth_buffer_destination_disambiguated",
+        "summary": "AUTH_HEAD 无 ACK 风险进一步收敛：已排除 g_tcp_listen_port/source-port 误解、默认 auth buffer 误写 VM dest、type101/type102 link_type=11 gateway 作为直接修复点；本轮又确认 get_proxy_kcp_dst_* 是 KCP 发送目标选择，不应直接替换 auth buffer 目标。剩余高价值方向是 proxy_sock link flag 来源、官方 CAG/session 绑定包或 fresh official UDP trace。"
+      }
+    },
+    {
+      "action": "update_node",
+      "id": "TF-0001",
+      "fields": {
+        "status": "in_progress",
+        "progress": 73,
+        "progress_source": "proxy_linktype_static_evidence_added_display_path_not_reached",
+        "summary": "协议 runner 仍未到达 AUTH_HEAD_ACK/SYNACK/ZIME channel/DISPLAY_INIT/40 分钟 verified-run；本轮完成 proxy/link_type 小范围 IDA 提取、脱敏 evidence helper 和 101 个 Python 测试验证，明确 KCP 发送目标与 auth buffer 内部目标不能混用。下一步继续定位 sock link flag/session 绑定或抓 fresh official UDP trace。"
+      }
+    },
+    {
+      "action": "update_node",
+      "id": "TF-0010",
+      "fields": {
+        "status": "in_progress",
+        "progress": 100,
+        "progress_source": "handoff_updated_for_proxy_linktype_evidence",
+        "summary": "交接文档已更新到第 61 节，记录新增 IDA proxy/link_type 证据、脱敏 KCP destination evidence helper、101 个 Python 测试通过结果，以及仍未达到 AUTH_HEAD_ACK/SYNACK/display path/verified-run 的事实。"
+      }
+    }
+  ]
+}

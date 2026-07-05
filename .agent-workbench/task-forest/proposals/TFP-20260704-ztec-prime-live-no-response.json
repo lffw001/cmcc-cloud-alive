@@ -1,0 +1,95 @@
+{
+  "applied_at": "2026-07-04T07:34:33.176873Z",
+  "base_graph_hash": "c88156a7b1880ca404f71bbae5830a5e86a0000a5dc055335bd0e223368c3328",
+  "base_summary": {
+    "edge_count": 56,
+    "node_count": 46,
+    "workspace_path": "/home/demo/restore/cmcc-cloud-alive"
+  },
+  "changes": [
+    {
+      "action": "add_node",
+      "alias": "ztec-prime-live-no-response",
+      "node": {
+        "acceptance_criteria": [
+          "交接文档记录重登成功和两次 ZTEC-prime live 结果",
+          "任务森林明确失败阶段早于 AUTH_HEAD",
+          "下一步路线转向 type102/UAC/token builder 或 fresh official trace/session 生命周期证据"
+        ],
+        "confidence": 0.92,
+        "context_tags": [
+          "cmcc-cloud-alive",
+          "KCP",
+          "ZTEC",
+          "live-short-test"
+        ],
+        "difficulty": "medium",
+        "evidence": [
+          "reports/token-check-relogin-20260704.out：login ok，response.code=2000",
+          "reports/kcp-auth-from-cag-live-ztec-prime-after-relogin-20260704.json：ztecPrime.ackReceived=false，responses=0",
+          "reports/kcp-auth-from-cag-live-ztec-prime-vm-target-20260704.json：ztecPrime.ackReceived=false，responses=0",
+          "docs/delivery-handoff.md 第 53 节"
+        ],
+        "kind": "subtask",
+        "priority": 1,
+        "progress": 100,
+        "progress_source": "relogin_then_ztec_prime_live_no_udp_response",
+        "remaining_minutes_max": 0,
+        "remaining_minutes_min": 0,
+        "requirements": [
+          "报告必须保持脱敏，不保存 CAG UDP target、VM IP、账号、密码、token、connectStr 或 authBuffer 明文",
+          "该结果只说明 ZTEC-prime 前置阶段无 UDP response，不证明桌面保活成功",
+          "后续不得重复盲测 ZTEC-prime target/link_type 组合，除非有官方轨迹或静态证据支持"
+        ],
+        "status": "done",
+        "summary": "重登成功后执行两次 session-owning ZTEC-prime live 短测：CAG target 与 VM target 编码变体均只发送 26 字节 ZTEC keepalive，等待 ZTEC ACK 超时，responses=0；由于失败早于 AUTH_HEAD，不能作为新的 AUTH_HEAD no-ACK 证据，也不能推进 SYNACK、display path 或 verified-run。",
+        "title": "记录重登后 ZTEC-prime live 前置 ACK 超时"
+      }
+    },
+    {
+      "action": "add_edge",
+      "edge": {
+        "confidence": 0.9,
+        "reason": "该 live 短测是 fresh type101 AUTH/SYNACK 短测路线中的 ZTEC-prime 排查分支。"
+      },
+      "from": "ztec-prime-live-no-response",
+      "to": "TF-0041",
+      "type": "child_of"
+    },
+    {
+      "action": "update_node",
+      "fields": {
+        "progress": 52,
+        "progress_source": "ztec_prime_live_no_response_before_auth_head",
+        "status": "in_progress",
+        "summary": "真实 AUTH/SYNACK 短测继续推进：fresh type101 authBuffer、proxy-sport/udpSsl、link_type 变体和同 socket ZTEC-prime 分支均已实现并测试。重登后两次 ZTEC-prime live 均在前置 ZTEC ACK 阶段超时，未推进到 AUTH_HEAD；普通 type101 AUTH 路线仍停在 AUTH_HEAD 无 ACK。下一步应优先恢复 type102/UAC/token auth buffer 或抓 fresh 官方 UDP 轨迹确认 session/source-port 初始化。"
+      },
+      "id": "TF-0041"
+    },
+    {
+      "action": "update_node",
+      "fields": {
+        "progress": 50,
+        "progress_source": "ztec_prime_cag_and_vm_target_no_response",
+        "status": "in_progress",
+        "summary": "AUTH_HEAD 无 ACK 风险仍在，并新增一个更早失败分支：重登后 ZTEC-prime 的 CAG target 与 VM target 编码变体均无 ZTEC ACK/UDP response。当前应停止盲测 target/link_type 组合，优先用 IDA/MCP 或 fresh official trace 恢复 type102/UAC/token 分支、官方 UDP listen/session 生命周期、本地端口绑定或 source-port 约束。"
+      },
+      "id": "TF-0044"
+    },
+    {
+      "action": "update_node",
+      "fields": {
+        "progress": 100,
+        "progress_source": "handoff_updated_for_ztec_prime_live_no_response",
+        "status": "in_progress",
+        "summary": "交接文档已更新到第 53 节，记录重登成功、ZTEC-prime CAG target 与 VM target live 均在 ZTEC ACK 阶段超时、失败早于 AUTH_HEAD，以及下一步转向 type102/UAC 或 fresh official trace/session 生命周期证据。"
+      },
+      "id": "TF-0010"
+    }
+  ],
+  "created_at": "2026-07-04T07:34:07.798081Z",
+  "proposal_id": "TFP-20260704-ztec-prime-live-no-response",
+  "rationale": "本轮对齐后继续维护任务森林：重登成功后执行两次 ZTEC-prime live 短测，CAG target 与 VM target 编码变体均在前置 ZTEC ACK 阶段超时，未推进到 AUTH_HEAD。该结果需要从“登录态过期待复测”更新为“已复测但更早无 UDP 响应”，并把下一步聚焦到 type102/UAC/token builder 或官方 fresh trace/session 生命周期证据。",
+  "session_id": "session-20260704-ztec-prime-live-no-response",
+  "status": "applied"
+}

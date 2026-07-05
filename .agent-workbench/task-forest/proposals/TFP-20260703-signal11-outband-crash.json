@@ -1,0 +1,150 @@
+{
+  "applied_at": "2026-07-03T12:47:09.541028Z",
+  "base_graph_hash": "54f3201929fc57407115112b2f31c7f56b6abba5b2c56d80f4e7196fe5795448",
+  "base_summary": {
+    "edge_count": 17,
+    "node_count": 16,
+    "workspace_path": "/home/demo/restore/cmcc-cloud-alive"
+  },
+  "changes": [
+    {
+      "action": "record_deviation",
+      "deviation": {
+        "confidence": 0.9,
+        "created_at": "2026-07-03T12:46:17.058679Z",
+        "evidence": "官方 SDK 日志显示 all channel、surface、mark、stream create、first frame recv success 后，在 QUIC_create_data_stream / SPICE_OUTBAND 阶段 catch signal[11] 并记录 VDI client crash。",
+        "expected_requirement": "准确区分官方链路是否到达 display path，并避免在错误诊断上继续空转。",
+        "id": "TFD-f16edf81df",
+        "observed_action_or_result": "第 28 节和 TF-0016 侧重记录抓包分析未观察到 DISPLAY_INIT/display activity，但未及时纳入官方 SDK 底层日志里的 first frame 后 signal[11] 崩溃事实。",
+        "recommendation": "保留 readiness=false 结论，但把根因排查优先级调整为：先无 LD_PRELOAD/probe 官方短测；若不崩溃则收缩 probe；若仍崩溃再启用 IDA/r2/Frida 深挖 outband QUIC 崩溃路径。",
+        "related_task_ids": [
+          "TF-0001",
+          "TF-0005",
+          "TF-0016"
+        ],
+        "severity": "medium",
+        "status": "open"
+      }
+    },
+    {
+      "action": "add_node",
+      "alias": "ida-install-decision",
+      "node": {
+        "acceptance_criteria": [
+          "完成无 probe 官方短测后再决定是否安装 IDA",
+          "若安装 IDA，刷新 reverse-skill tool-index 并记录可用路径"
+        ],
+        "confidence": 0.92,
+        "difficulty": "low",
+        "evidence": [
+          "用户消息：ida不可用是可以安装的",
+          "reverse-skill tool-index 当前显示 idapro 不可用，r2 和 Frida 可用",
+          "signal[11] 崩溃点已有官方 SDK 日志证据，优先需要区分是否由 probe/LD_PRELOAD 诱发"
+        ],
+        "kind": "decision",
+        "priority": 1,
+        "progress": 100,
+        "progress_source": "user_confirmed_ida_install_allowed_but_triage_prefers_no_probe_test",
+        "requirements": [
+          "不把 IDA 未安装作为当前 display path 验证的阻塞项",
+          "如果进入静态深挖，再安装或配置 IDA/idalib-mcp",
+          "静态分析目标聚焦 uSmartView_VDI_Client、libspice-client-glib-zte-2.0.so.8.5.0 与 QUIC/SPICE_OUTBAND 路径"
+        ],
+        "status": "done",
+        "summary": "用户补充 IDA 不可用时可以安装。当前决策是先做无 LD_PRELOAD/probe 官方短测，因为它比静态反编译更快区分 probe 诱发和客户端自身崩溃；若无 probe 仍在 SPICE_OUTBAND 路径崩溃，再安装或配置 IDA/idalib-mcp 深挖。",
+        "title": "决策：IDA 可安装但不阻塞无 probe 短测"
+      }
+    },
+    {
+      "action": "add_edge",
+      "edge": {
+        "confidence": 0.9,
+        "reason": "该决策澄清 vdi client 瞬退排查中 IDA 的位置：可用但不是无 probe 复现实验前置条件。"
+      },
+      "from": "ida-install-decision",
+      "to": "TF-0016",
+      "type": "clarifies"
+    },
+    {
+      "action": "update_node",
+      "fields": {
+        "acceptance_criteria": [
+          "完成一次不带 LD_PRELOAD/zime-probe.so 的官方短测",
+          "若无 probe 不崩溃，收缩 probe hook 范围并重新抓 display path trace",
+          "若无 probe 仍崩溃，定位 QUIC_create_data_stream / SPICE_OUTBAND signal[11] 的客户端或环境原因",
+          "官方客户端能稳定进入云桌面并产生 display path trace",
+          "新的 analyze-rap-zime 报告通过 check-rap-zime-runner-input --require-templates"
+        ],
+        "evidence": [
+          "reports/screenshots/official-client-after-mousedown-click-20260703-194446.png：官方客户端进入正在连接页面",
+          "reports/screenshots/official-client-after-instant-exit-20260703-194610.png：连接后回到列表页",
+          "用户观察：vdi_client 进程只保留不到 5 秒",
+          "reports/zime-transport-20260703-193100-fresh.analysis.final.json：未提取到可用 DISPLAY_INIT 或 runner input",
+          "reports/rap-zime-20260703-193100-fresh-instant-exit.final.readiness.json：readyForLiveShortTest=false，缺 RAP/ZIME live 短测必要字段",
+          "官方 SDK 日志脱敏摘要：all channel 8/8、surface、mark、多路 stream create 和 first frame recv success 后，在 QUIC_create_data_stream / SPICE_OUTBAND 阶段 catch signal[11]，reason 为 VDI client crash"
+        ],
+        "progress": 50,
+        "progress_source": "official_sdk_log_reframes_instant_exit_as_first_frame_then_spice_outband_signal11",
+        "requirements": [
+          "不能把本次官方连接页或短暂运行态当作保活成功",
+          "不能用本次 instant-exit trace 直接运行 native bridge live 短测",
+          "后续 GUI 点击仍必须先截图确认目标窗口和卡片，且不操作 CrossDesk",
+          "分辨率变化后不要复用窗口相对坐标；点击前应确认鼠标实际落在官方窗口按钮区域",
+          "优先做无 LD_PRELOAD/probe 官方短测，区分 probe 诱发与客户端自身崩溃"
+        ],
+        "summary": "2026-07-03 官方客户端点击目标套餐连接后，uSmartView_VDI_Client / vdi client 只存活不到 5 秒；官方 SDK 日志显示已完成 all channel、surface、mark、多路 stream create 和 first frame recv success，随后在 QUIC_create_data_stream 设置 SPICE_OUTBAND 时 catch signal[11] 并记录 VDI client crash。本次 trace 仍不能作为 runner input，但根因方向从“未进 display path”修正为“first frame 后 outband QUIC stream 崩溃”。",
+        "title": "风险：官方 vdi client 第一帧后在 SPICE_OUTBAND 路径崩溃"
+      },
+      "id": "TF-0016"
+    },
+    {
+      "action": "update_node",
+      "fields": {
+        "evidence": [
+          "reports/zime-transport-20260703-193100-fresh.jsonl：官方连接瞬退 trace",
+          "reports/zime-transport-20260703-193100-fresh.analysis.final.json：分析报告未提取到可用 DISPLAY_INIT/display activity",
+          "reports/rap-zime-20260703-193100-fresh-instant-exit.final.readiness.json：缺 RAP tunnel、UDP target、ZTEC target、RAP template 和 send templates",
+          "docs/delivery-handoff.md 第 29 节记录 first frame 后 SPICE_OUTBAND signal[11] 崩溃的修正结论"
+        ],
+        "progress": 35,
+        "progress_source": "fresh_trace_reached_first_frame_but_crashed_before_usable_runner_input",
+        "summary": "已尝试重新抓取当前 Win10 环境 official trace；官方 vdi client 实际已到 first frame，但在 SPICE_OUTBAND outband QUIC stream 创建阶段 signal[11] 崩溃。本次 trace 仍不含可用 runner input。下一步先做无 probe 官方短测，确认是否为 LD_PRELOAD/zime-probe.so 诱发，再重新抓稳定 display path trace。"
+      },
+      "id": "TF-0005"
+    },
+    {
+      "action": "update_node",
+      "fields": {
+        "evidence": [
+          "README.md 当前列出 native bridge、RAP/ZIME scaffold 和未完成项",
+          "docs/protocol-keepalive.md 规定成功必须到 display path 并 verified-run",
+          "最新本地验证 compileall OK，80 tests OK",
+          "最新 live 短测停在 udp_response_pending，ZTEC ack 未收到",
+          "新增 check-rap-zime-runner-input 用于防止旧/不完整 runner input 继续空跑",
+          "2026-07-03 fresh official trace 的抓包分析仍无法生成 ready runner input",
+          "官方 SDK 日志修正：客户端已到 first frame，随后在 QUIC_create_data_stream / SPICE_OUTBAND 路径 signal[11] 崩溃"
+        ],
+        "progress": 45,
+        "progress_source": "official_client_reached_first_frame_then_spice_outband_signal11"
+      },
+      "id": "TF-0001"
+    },
+    {
+      "action": "update_node",
+      "fields": {
+        "evidence": [
+          "docs/delivery-handoff.md 第 28 节记录官方连接瞬退、最终 trace/readiness 结论、GUI 坐标风险和下一步诊断路径",
+          "docs/delivery-handoff.md 第 29 节修正为 first frame 后 SPICE_OUTBAND signal[11] 崩溃，并记录 IDA 可安装但不阻塞无 probe 短测"
+        ],
+        "progress": 100,
+        "progress_source": "delivery_handoff_sections_28_and_29_added"
+      },
+      "id": "TF-0010"
+    }
+  ],
+  "created_at": "2026-07-03T12:46:17.056828Z",
+  "proposal_id": "TFP-20260703-signal11-outband-crash",
+  "rationale": "用户指出 vdi_client 只保留不到 5 秒，并补充 IDA 不可用时可以安装。复核官方 SDK 日志后，发现第 28 节的“未观察到 display path”需要修正边界：分析报告没有提取到 runner input，但官方底层已经到 all channel、surface、mark、stream create 和 first frame，随后在 QUIC_create_data_stream 设置 SPICE_OUTBAND 时 signal[11] 崩溃。需要把下一步从继续猜 runner input 改为先做无 LD_PRELOAD/probe 官方短测，区分 probe 诱发与客户端自身崩溃；IDA 安装作为后续静态深挖分支。",
+  "session_id": "session-20260703-signal11-outband-crash",
+  "status": "applied"
+}

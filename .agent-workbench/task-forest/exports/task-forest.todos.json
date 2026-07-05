@@ -1,0 +1,230 @@
+[
+  {
+    "alignment": {
+      "fit": "aligned",
+      "fit_confidence": 0.88,
+      "user_goal": "继续完成协议级保活并避免重复空转。",
+      "validation_plan": [
+        "用户确认后应用 proposal",
+        "运行 task-forest validate/export",
+        "继续完成 UDP probe 增强和 live 短测"
+      ],
+      "why_not_enough": "proposal 尚未应用；真实协议保活仍需代码和 live 验证。",
+      "why_this_task": "任务图把目标、已完成、缺口、风险和下一步拆开，能减少重复造轮子。"
+    },
+    "blocked_by": [],
+    "confidence": 0.62,
+    "context_tags": [
+      "cmcc-cloud-alive",
+      "protocol-reverse",
+      "RAP",
+      "ZIME",
+      "SPICE"
+    ],
+    "desired_outcomes": [
+      "只连接家庭云电脑畅享版月包，不误选其他套餐或桌面",
+      "云电脑 guest OS 已刷回 Win10，但外层仍按家庭 Linux RAP/ZIME/SPICE transport 处理",
+      "Python runner 能建立 RAP/ZIME 通道、创建 stream、发送 DISPLAY_INIT 并进入 display path",
+      "最终 40 分钟 verified-run 中每分钟独立状态检查均保持运行态",
+      "所有 live 短测和最终实现明确标注 session-owning/顶号性质"
+    ],
+    "difficulty": "very_high",
+    "id": "TF-0001",
+    "kind": "global_task",
+    "next_action": "不要再把 fresh runner input/native bridge 作为下一步；博客完整链路必须等 AUTH gate accepted report 后再恢复。",
+    "priority": 1,
+    "progress": 74.5,
+    "purpose": "让用户的家庭云电脑畅享版月包能由 Python 协议模块替代官方客户端维持桌面会话。",
+    "ready": true,
+    "remaining_minutes_max": 1800,
+    "remaining_minutes_min": 900,
+    "status": "in_progress",
+    "success_metrics": [
+      "nativeMilestones.stage 到达 display_path_observed 或等价成功阶段",
+      "verifiedRunPassed=true",
+      "reports 中存在可审计的 40 分钟 verified-run 报告和协议 trace 证据",
+      "单元测试和本地 compileall 通过"
+    ],
+    "title": "实现家庭云电脑畅享版月包协议级保活 Python runner"
+  },
+  {
+    "alignment": {
+      "fit": "unknown",
+      "fit_confidence": 0.0,
+      "user_goal": "",
+      "validation_plan": [],
+      "why_not_enough": "",
+      "why_this_task": ""
+    },
+    "blocked_by": [],
+    "confidence": 0.86,
+    "context_tags": [
+      "cmcc-cloud-alive",
+      "AUTH_HEAD",
+      "official-trace",
+      "python-replay"
+    ],
+    "desired_outcomes": [],
+    "difficulty": "high",
+    "id": "TF-0061",
+    "kind": "task",
+    "next_action": "用户侧在 session-owning shell 中用 --cag-material-file/- 提供 explicit material 先跑 AUTH gate-only no-network preflight；preflight ready 后，在明确授权窗口用同参数加 --require-live-gate-ready --require-auth-gate-accepted 运行 gate-only live。验收只看同 fd/同 remote 71-byte ACK-like 后发送 241-byte AUTH_DATA；继续禁止 AUTH_ACK/SYNACK/native bridge/DISPLAY_INIT/40 分钟 verified-run。",
+    "priority": 1,
+    "progress": 97.5,
+    "purpose": "",
+    "ready": true,
+    "remaining_minutes_max": null,
+    "remaining_minutes_min": null,
+    "status": "in_progress",
+    "success_metrics": [],
+    "title": "复现官方 199 字节 AUTH gate 最小 Python 实验"
+  },
+  {
+    "alignment": {
+      "fit": "unknown",
+      "fit_confidence": 0.0,
+      "user_goal": "",
+      "validation_plan": [],
+      "why_not_enough": "",
+      "why_this_task": ""
+    },
+    "blocked_by": [],
+    "confidence": 0.82,
+    "context_tags": [
+      "cmcc-cloud-alive",
+      "analyze-rap-zime",
+      "runner-input"
+    ],
+    "desired_outcomes": [],
+    "difficulty": "medium",
+    "id": "TF-0062",
+    "kind": "risk",
+    "next_action": "澄清阻塞原因并决定解除或废止",
+    "priority": 2,
+    "progress": 0.0,
+    "purpose": "",
+    "ready": false,
+    "remaining_minutes_max": null,
+    "remaining_minutes_min": null,
+    "status": "blocked",
+    "success_metrics": [],
+    "title": "工具缺陷：analyze-rap-zime 可能被不完整 ZTEC 候选片段打断"
+  },
+  {
+    "alignment": {
+      "fit": "unknown",
+      "fit_confidence": 0.0,
+      "user_goal": "",
+      "validation_plan": [],
+      "why_not_enough": "",
+      "why_this_task": ""
+    },
+    "blocked_by": [],
+    "confidence": 0.7,
+    "context_tags": [],
+    "desired_outcomes": [],
+    "difficulty": "high",
+    "id": "TF-0003",
+    "kind": "task",
+    "next_action": "澄清阻塞原因并决定解除或废止",
+    "priority": 1,
+    "progress": 95.0,
+    "purpose": "",
+    "ready": false,
+    "remaining_minutes_max": 420,
+    "remaining_minutes_min": 180,
+    "status": "blocked",
+    "success_metrics": [],
+    "title": "推进 RAP/ZIME native bridge 与 UDP 短测工具"
+  },
+  {
+    "alignment": {
+      "fit": "unknown",
+      "fit_confidence": 0.0,
+      "user_goal": "",
+      "validation_plan": [],
+      "why_not_enough": "",
+      "why_this_task": ""
+    },
+    "blocked_by": [
+      "TF-0005"
+    ],
+    "confidence": 0.55,
+    "context_tags": [],
+    "desired_outcomes": [],
+    "difficulty": "high",
+    "id": "TF-0006",
+    "kind": "task",
+    "next_action": "先完成依赖：TF-0005",
+    "priority": 1,
+    "progress": 0.0,
+    "purpose": "",
+    "ready": false,
+    "remaining_minutes_max": 360,
+    "remaining_minutes_min": 120,
+    "status": "blocked",
+    "success_metrics": [],
+    "title": "用 fresh runner input 跑 session-owning live 短测直到 native_channel_created"
+  },
+  {
+    "alignment": {
+      "fit": "unknown",
+      "fit_confidence": 0.0,
+      "user_goal": "",
+      "validation_plan": [],
+      "why_not_enough": "",
+      "why_this_task": ""
+    },
+    "blocked_by": [
+      "TF-0006"
+    ],
+    "confidence": 0.5,
+    "context_tags": [],
+    "desired_outcomes": [],
+    "difficulty": "very_high",
+    "id": "TF-0007",
+    "kind": "milestone",
+    "next_action": "先完成依赖：TF-0006",
+    "priority": 1,
+    "progress": 0.0,
+    "purpose": "",
+    "ready": false,
+    "remaining_minutes_max": 720,
+    "remaining_minutes_min": 240,
+    "status": "blocked",
+    "success_metrics": [],
+    "title": "完成 DISPLAY_INIT 后真实 display path 和 40 分钟 verified-run"
+  },
+  {
+    "alignment": {
+      "fit": "unknown",
+      "fit_confidence": 0.0,
+      "user_goal": "",
+      "validation_plan": [],
+      "why_not_enough": "",
+      "why_this_task": ""
+    },
+    "blocked_by": [],
+    "confidence": 0.75,
+    "context_tags": [
+      "cmcc-cloud-alive",
+      "KCP",
+      "ZIME",
+      "display-path"
+    ],
+    "desired_outcomes": [],
+    "difficulty": "very_high",
+    "id": "TF-0029",
+    "kind": "task",
+    "next_action": "澄清阻塞原因并决定解除或废止",
+    "priority": 1,
+    "progress": 0.0,
+    "purpose": "",
+    "ready": false,
+    "remaining_minutes_max": 360,
+    "remaining_minutes_min": 120,
+    "status": "blocked",
+    "success_metrics": [],
+    "title": "获取 fresh KCP SYNACK 并接入 native bridge 前置握手"
+  }
+]

@@ -1,0 +1,46 @@
+{
+  "applied_at": "2026-07-03T22:56:18.524945Z",
+  "base_graph_hash": "30334e6f7194bcfbf169f852c07704baad1254fd2601548e2106ebdc6f160e4a",
+  "base_summary": {
+    "edge_count": 38,
+    "node_count": 30,
+    "workspace_path": "/home/demo/restore/cmcc-cloud-alive"
+  },
+  "changes": [
+    {
+      "action": "update_node",
+      "fields": {
+        "evidence": [
+          "cmcc_cloud_alive/zime_native_bridge.py",
+          "cmcc_cloud_alive/rap_zime.py：新增 KCP client SYN 编码和 run_kcp_sync_probe",
+          "reports/kcp-sync-probe-pcap-metadata-20260704.json：client SYN 已发出但 synackReceived=false",
+          "reports/ida-libspice-zime-analysis-20260704-rerun.json：ZIME_CreateDataChannel 参数来自 KCP/SYNACK 后状态",
+          "reports/ida-libZIMEDataEngine-analysis-20260704.json：CreateDataChannel/CreateStream gate 已确认",
+          "python3 -m compileall -q cmcc_cloud_alive tests scripts/ida_extract_spice_zime.py：通过",
+          "python3 -m unittest discover -s tests -p 'test_python_*.py' -v：86 tests OK"
+        ]
+      },
+      "id": "TF-0003"
+    },
+    {
+      "action": "update_node",
+      "fields": {
+        "evidence": [
+          "docs/delivery-handoff.md 第 36 节：KCP sync/SYNACK 前置协商字段已恢复",
+          "docs/delivery-handoff.md 第 37 节：client SYN 构造和 KCP sync probe 已落地",
+          "docs/delivery-handoff.md 第 38 节：IDA 复核 ZIME channel/stream 创建门槛",
+          "reports/kcp-sync-probe-pcap-metadata-20260704.json：旧 metadata target 未返回 SYNACK",
+          "reports/ida-libspice-zime-analysis-20260704-rerun.json：ZIME channel 依赖 KCP/SYNACK 后状态",
+          "reports/ida-libZIMEDataEngine-analysis-20260704.json：CreateDataChannel/CreateStream gate 已确认",
+          "python3 -m unittest discover -s tests -p 'test_python_*.py' -v：86 tests OK"
+        ]
+      },
+      "id": "TF-0001"
+    }
+  ],
+  "created_at": "2026-07-03T22:56:18.317918Z",
+  "proposal_id": "TFP-20260704-ida-zime-verification",
+  "rationale": "补记本轮 IDA ZIME channel gate 更新后的本地验证结果。update-node CLI 在本机触发 desired_outcome 参数 bug，因此用 proposal 正式记录并应用。",
+  "session_id": "session-20260704-ida-zime-verification",
+  "status": "applied"
+}

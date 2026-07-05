@@ -1,387 +1,331 @@
 # cmcc-cloud-alive
 
-Pure HTTP-first keepalive research and implementation for China Mobile Cloud PC
-family edition.
+China Mobile family cloud PC protocol-level keepalive research.
 
-This is a new project. It is not the legacy SDK-wrapper keepalive that starts
-`bootCypc` or `uSmartView_VDI_Client`.
+This project targets the family/ordinary cloud PC route, especially the Linux
+client path that uses RAP/ZIME/SPICE desktop transport. Docker packaging and
+HTTP/CAG keepalive loops are abandoned.
 
-## Source And Credit
+Current scope is limited to `家庭云电脑畅享版月包`. The user's desktop guest OS
+has been restored to Win10, but the external connection path still follows the
+family Linux client RAP/ZIME/SPICE transport.
 
-This project credits and cross-checks against these reverse-engineering notes:
+## Status
 
-- <https://hansiy.net/p/86b7133e>
+Current active route:
+
+1. Use the family SOHO API only for login, cloud list, status, and fresh
+   connection material.
+2. Reverse the native Linux client transport:
+   `CAG/RAP -> ZIME -> SPICE main/display channel`.
+3. Reproduce the display-channel keepalive path from Codming's analysis:
+   SPICE link/auth, display channel, `DISPLAY_INIT`, then ACK/PONG handling.
+4. Prove it with an independent per-minute cloud power monitor. If the VM
+   reaches `已关机` or any non-running state, the test fails.
+
+Implemented:
+
+- Password login and SOHO signed/encrypted request support.
+- Cloud list, selection cache, and power-state status checks.
+- Target guard for `家庭云电脑畅享版月包`: automatic selection and explicit
+  selection refuse clearly non-target cloud PCs.
+- Independent power monitor: `power-monitor` and `scripts/power-monitor.sh`.
+- CAG boot/connect-material acquisition and `connectStr` decoding.
+- Offline SPICE/Chuanyun codecs:
+  REDQ link messages, mini/data headers, `DISPLAY_INIT`, ACK/PONG, Surface/MARK
+  success predicate, and RSA OAEP ticket encryption.
+- ZIME dynamic probe:
+  `research/zime-probe.c`, `scripts/build-zime-probe.sh`,
+  `scripts/run-zime-probe.sh`. The probe also reports candidate
+  `ZIMEPacketOutSpec` records from `TransportBatchImplC::OnSendData_Batch`
+  so RAP/ZIME protected UDP payload descriptors can be studied without
+  hand-decoding raw memory snapshots.
+- RAP/ZIME UDP transport scaffold:
+  ZTEC request/ack codec, RAP compound datagram parsing, and
+  `rap-zime-udp-probe` for short target/tunnel validation. The probe can also
+  load complete packet-out payloads from a `zime-native-bridge` report via
+  `--native-report`.
+- RAP/ZIME payload-envelope analysis:
+  observed data frames expose an inner payload length and local SPICE channel
+  prefix before protected ZIME bytes. This is trace evidence only and is not
+  replayable plaintext.
+- Research-only native ZIME bridge:
+  `zime-native-bridge` can inspect `libZIMEDataEngine.so` exports/ABI and, only
+  with `--allow-native-run`, call the native engine with fake external
+  transport callbacks to study packet-out records. It now reaches
+  `ZIME_CreateDataChannel ret=0` with `mtu=1452` and captures a complete
+  `native_transport_batch` after `ZIME_DataChannelProcess2`; this is a
+  protected QUIC/ZIME packet-out candidate, not desktop keepalive proof. The
+  bridge also has an explicitly enabled UDP-backed external transport mode
+  that can send native packet-out bytes and feed UDP responses back through
+  `ZIME_ReceiveData`; local tests cover raw UDP and RAP-wrapped payloads. The
+  CLI now waits for a successful `native_channel_created` callback before
+  creating a user stream, so a slow RAP/ZIME handshake does not trigger an
+  early `ZIME_CreateDataStream` / `Channel does not exist` failure.
+
+Not implemented yet:
+
+- A full RAP/ZIME/SPICE protocol runner that completes SPICE link/auth/display
+  setup and keeps the family desktop alive without the official GUI client.
+- A successful real cloud RAP/ZIME handshake through the new UDP-backed native
+  transport, including `native_channel_created` / channel-active evidence.
+- User stream creation and `ZIME_SendData(DISPLAY_INIT)` after the native
+  channel is truly established.
+
+## Rejected Routes
+
+Pure SOHO HTTP visible timers are rejected as keepalive. Long tests showed
+`heartbeat/infoReport/logConfig` could return accepted responses while the VM
+still powered off.
+
+CAG HTTPS refresh is rejected as keepalive. It is retained only for boot and
+connection-material research. It can replace an official desktop session, and
+independent monitoring saw shutdown during the CAG + HTTP-prime test.
+
+Do not treat accepted HTTP responses, CAG `connectStr`, or a temporary
+`运行中` status after CAG as success. Success requires the cloud desktop to stay
+running past the idle shutdown window under independent per-minute monitoring.
+
+## References
+
+Primary protocol direction:
+
 - <https://codming.com/posts/cmcc-cloud-computer-keepalive/>
 
-The Hansiy article is for methodology, not endpoint copying: it is about the
-enterprise Windows client, while this project targets the family edition. The
-important process kept here is:
+Methodology reference only, not a family-edition protocol source:
 
-1. statically reverse the actual family client and recover request behavior;
-2. verify runtime traffic with packet capture because capture evidence wins
-   when it conflicts with source-code assumptions;
-3. only call a route keepalive after a long run proves the cloud PC stays
-   powered without starting or occupying the official client.
+- <https://hansiy.net/p/86b7133e>
 
-## Goal
+The family Linux route differs from the macOS/enterprise examples. Captures and
+the installed Linux client decide the implementation, not assumptions copied
+from another edition.
 
-The primary target is the ordinary family cloud-PC HTTP heartbeat:
+Handoff for the next agent:
 
-```text
-POST https://soho.komect.com/terminal/cc/cloudPc/heartbeat/v2
-body: { userServiceId }
-```
+- [docs/delivery-handoff.md](docs/delivery-handoff.md)
 
-A successful HTTP keepalive must:
-
-- not start official SDK client binaries;
-- send the same ordinary-cloud-PC heartbeat endpoint used by the family client;
-- preserve business responses instead of converting them to generic network
-  errors;
-- stop only on `4043`/`YUN_OTHER_LOGIN`, matching the family client scheduler;
-- show SOHO HTTPS traffic in capture and no CAG/SPICE traffic;
-- prove the VM stays powered/running beyond the idle sleep window.
-
-SPICE/CAG/ZIME remains a fallback research route only if the HTTP route is
-proven insufficient. SDK log lines such as `connectDesktop ret val: 0` are not
-considered success.
-
-## Current Status
-
-Implemented and tested:
-
-- Family-edition SOHO API signing/RSA request support for SMS login, cloud
-  list, token check, system settings, and ordinary-cloud-PC HTTP heartbeat
-  `/cc/cloudPc/heartbeat/v2`.
-- Continuous `heartbeat-loop` with client-aligned retry semantics and explicit
-  `保活成功: <duration>` log lines.
-- `verify-http` report generation that checks accepted heartbeat responses,
-  SOHO HTTPS traffic, absence of official SDK processes, absence of CAG `8899`
-  traffic, and cloud-PC status snapshots.
-- SPICE REDQ link codecs, full data headers, `DISPLAY_INIT`, `SET_ACK`, ACK,
-  and PONG helpers.
-- Linux local GSpice/proxy loopback parser.
-- Linux/ZTE CAG UDP `ZTEC` control parser.
-- Dynamic CAG tunnel `word0` detection.
-- Decoding for the observed CAG chain:
-  `local_key -> server_key/tunnelId -> connect_info -> connect_reply 200`.
-- Native sender for the verified CAG UDP control path through
-  `connect_reply code=200`, without starting official SDK binaries.
-- Pcap analyzers for loopback SPICE and external CAG/ZIME traffic.
-- Static ZIME C-wrapper ABI evidence extraction for the installed Linux
-  family client.
-
-Not complete yet:
-
-- final long-duration proof on a VM that is already powered/running;
-- standalone SPICE-over-CAG/ZIME fallback keepalive without SDK;
-- ZIME reliable UDP sequencing, ACK, retransmit, and close implementation;
-- DISPLAY_INIT-level proof on the Linux family CAG route;
-
-The current code is intentionally fail-closed around unproven SPICE/CAG/ZIME
-sending paths.
-
-## Usage
+## Basic Commands
 
 Run tests:
 
 ```bash
-npm test
+python3 -m unittest discover -s tests -p 'test_python_*.py' -v
 ```
 
-Login with the family-edition SOHO API:
+Login and cache credentials:
 
 ```bash
-node bin/cmcc-cloud-alive.js sms-send <phone>
-node bin/cmcc-cloud-alive.js sms-login <phone> <code>
-node bin/cmcc-cloud-alive.js list
-node bin/cmcc-cloud-alive.js cloud-status <userServiceId>
-node bin/cmcc-cloud-alive.js firm-auth <userServiceId>
-node bin/cmcc-cloud-alive.js protocol-probe <userServiceId> --tls-probe 1
-node bin/cmcc-cloud-alive.js cag-plan <userServiceId>
+CMCC_ALIVE_STATE=.tmp/state.json python3 bin/cmcc_cloud_alive.py login <username> '<password>' --save-password
 ```
 
-The SMS login flow is intentionally aligned with the previous family-edition
-SOHO API implementation. It is reused only to obtain and cache the account
-login state needed by the protocol work; it is not the keepalive mechanism.
-
-If a legacy login already exists, import it instead of requesting another SMS
-code:
+List and select a desktop:
 
 ```bash
-node bin/cmcc-cloud-alive.js import-legacy-state
+CMCC_ALIVE_STATE=.tmp/state.json python3 bin/cmcc_cloud_alive.py list
+CMCC_ALIVE_STATE=.tmp/state.json python3 bin/cmcc_cloud_alive.py select <userServiceId>
 ```
 
-Run the HTTP heartbeat candidate once:
+Check cloud power state:
 
 ```bash
-node bin/cmcc-cloud-alive.js heartbeat <userServiceId>
+CMCC_ALIVE_STATE=.tmp/state.json python3 bin/cmcc_cloud_alive.py status <userServiceId>
 ```
 
-Generate the static reverse-engineering evidence first:
+Independent power monitor:
 
 ```bash
-node bin/cmcc-cloud-alive.js audit-http-source
+CMCC_ALIVE_STATE=.tmp/state.json scripts/power-monitor.sh <userServiceId> \
+  --duration 2400 \
+  --interval 60 \
+  --stop-on-off \
+  --report-file reports/power-monitor-40min.json
 ```
 
-This scans the recovered family client sources and reports the ordinary cloud
-PC heartbeat constant, the separate time-zone `v1` heartbeat branch, the
-`userServiceId` request body, the `4043` stop condition, and the reschedule
-logic. It is the source-audit half of the Hansiy-style workflow; packet capture
-still decides the final runtime claim.
-
-Run it continuously:
+Run any protocol experiment under mandatory independent verification:
 
 ```bash
-node bin/cmcc-cloud-alive.js heartbeat-loop <userServiceId>
+CMCC_ALIVE_STATE=.tmp/state.json scripts/verified-run.sh \
+  --duration 2400 \
+  --interval 60 \
+  --report-file reports/<experiment>.verified.json \
+  <userServiceId> -- <protocol-runner-command>
 ```
 
-When `--interval-ms` is omitted, the interval is read from the official family
-client settings endpoint `/system/settings/v1` (`cloudPcheartbeatTime`) and
-falls back to 30 seconds if settings are unavailable.
-
-Generate a short verification report that checks heartbeat responses, official
-client processes, SOHO HTTPS traffic, CAG `8899` traffic, and cloud-PC status
-snapshots:
+Offline SPICE codec proof:
 
 ```bash
-sudo node bin/cmcc-cloud-alive.js verify-http <userServiceId> \
-  --duration-ms 120000
+python3 bin/cmcc_cloud_alive.py spice-offline-proof
 ```
 
-`verify-http` reports `httpPathOk` for the pure HTTP path and
-`sleepPreventionProof` for the stronger claim that the VM stayed powered during
-a long enough run. A powered-off VM can still return accepted heartbeat
-responses, so `httpPathOk=true` alone is not final keepalive proof.
+`run --strategy auto` now resolves to the SPICE protocol target and exits with
+a clear not-implemented error until the real RAP/ZIME/SPICE runner exists.
 
-`firm-auth` calls the family `/cc/getFirmAuth/v1` endpoint and prints a redacted
-protocol route summary. It does not start the official client or connect to
-CAG/SPICE.
+## ZIME Probe
 
-`protocol-probe` additionally performs a safe CAG TCP TLS handshake when
-`--tls-probe 1` is used. It does not send desktop auth, SPICE auth, or SDK
-socket commands.
-
-`cag-plan` builds the CAG `local_key` and, when `--server-key` plus
-`--tunnel-id` are supplied from a capture, `connect_info` datagram summaries
-offline. It does not send packets. Hex output is hidden unless `--show-hex 1`
-is explicitly passed.
-
-Extract reusable CAG handshake parameters from a capture:
+Build the probe:
 
 ```bash
-node bin/cmcc-cloud-alive.js extract-cag-handshake /path/to/cag.pcap
+scripts/build-zime-probe.sh
 ```
 
-The output includes `cagPlanArgs`. These values can be passed back to
-`cag-plan`, including `--local-key-sequence` and `--connect-info-sequence`, to
-reproduce packet summaries from observed family-edition Linux CAG traffic. The
-observed `connect_info` control word is also exposed as
-`--connect-info-control-word` for capture-to-plan comparisons.
-
-Probe the native CAG UDP control handshake:
+Run an official client or SDK command under the probe:
 
 ```bash
-node bin/cmcc-cloud-alive.js cag-handshake <userServiceId>
-node bin/cmcc-cloud-alive.js cag-handshake <userServiceId> --send-preflight 1
-node bin/cmcc-cloud-alive.js cag-handshake <userServiceId> --send-connect-info 1
+ZIME_PROBE_LOG=reports/zime-official.jsonl \
+  scripts/run-zime-probe.sh -- <official-client-or-sdk-command>
 ```
 
-The first command sends only `local_key` and waits for `server_key`. The second
-preflight command sends the observed 26-byte CAG probe and records the 14-byte
-echo when CAG accepts the probe tail. The third continues through `connect_info` and expects
-`connect_reply code=200`. It still does not implement the ZIME tunnel or
-DISPLAY_INIT-level keepalive.
-
-`--send-ready 1` is intentionally fail-closed. Current captures show that the
-post-`connect_reply` ready sequences are not determined by the marker byte
-alone. Use explicit `--client-ready-sequence` and `--peer-confirm-sequence`
-only while comparing against a fresh official-client research capture.
-
-Extract native ZIME/CAG library evidence from the installed Linux client:
+The default `ZIME_PROBE_MODE=low` is intentionally conservative after the
+2026-07-03 `SPICE_OUTBAND` crash investigation: it only interposes exported
+ZIME C API boundaries, defaults to `ZIME_PROBE_PROCESS_FILTER=uSmartView`, and
+does not export libc socket/read/write/send/recv, SSL, or C++ callback symbols.
+Use explicit modes only when the next capture needs deeper transport evidence:
 
 ```bash
-node bin/cmcc-cloud-alive.js extract-zime-native
+ZIME_PROBE_MODE=transport scripts/run-zime-probe.sh -- <official-client-or-sdk-command>
+ZIME_PROBE_MODE=callback scripts/run-zime-probe.sh -- <official-client-or-sdk-command>
+ZIME_PROBE_MODE=full scripts/run-zime-probe.sh -- <official-client-or-sdk-command>
+ZIME_PROBE_MODE=cpp scripts/run-zime-probe.sh -- <official-client-or-sdk-command>
 ```
 
-The report summarizes `libcag.so`, `libZIMEDataEngine.so`, and `sdk_config.json`
-signals such as CAG bootstrap functions, ZIME data-channel symbols,
-QUIC/SCTP/DTLS strings, ACK/PING/packet scheduling strings, and keepalive
-timers. This is static transport evidence for implementation work; it does not
-run the SDK or send packets.
+`transport/full/cpp` use separate `.so` outputs so a high-intrusion build does
+not silently affect later low-intrusion runs.
 
-Extract the narrower ZIME C-wrapper ABI boundary:
+Analyze a probe log:
 
 ```bash
-node bin/cmcc-cloud-alive.js extract-zime-abi
+python3 bin/cmcc_cloud_alive.py analyze-zime-probe reports/zime-official.jsonl \
+  --report-file reports/zime-official.analysis.json
 ```
 
-This checks exported `ZIME_*` functions and disassembly evidence for wrapper
-handle layout, `ZIME_Init` parameter offsets, `ZIME_ReceiveData` socket
-parameter copying, `ZIME_SendData`/`ZIME_SendData2` profile handling, and the
-callback/external-transport setup path. It is an offline reverse-engineering
-aid for building the next no-SDK transport harness; it is not live keepalive
-proof.
-
-Use this as the final proof gate after the VM is already powered/running:
+Analyze RAP/ZIME transport and produce runner input:
 
 ```bash
-sudo node bin/cmcc-cloud-alive.js verify-http <userServiceId> \
-  --duration-ms 3600000 \
-  --wait-powered-ms 600000 \
-  --require-sleep-proof 1 \
-  --report-file ./reports/http-proof.json
+python3 bin/cmcc_cloud_alive.py analyze-rap-zime reports/zime-official.jsonl \
+  --report-file reports/rap-zime-runner-input.json
 ```
 
-`--wait-powered-ms` is a precheck window. The proof timer starts only after the
-cloud PC status becomes powered/running.
+The report includes `runnerInput.observedTransports`. Treat it as usable
+RAP/ZIME UDP runner input only when `rapZimeUdpObserved=true` and a tunnel ID is
+present. A `family-native-spice-trace-only` result means the probe saw local
+native/SPICE activity but did not capture the RAP/ZTEC UDP tunnel parameters.
 
-The heartbeat command is aligned to the family Linux client source: `4043`
-(`YUN_OTHER_LOGIN`) is treated as a hard stop, while other JSON business codes
-are recorded and the loop continues, matching the client heartbeat scheduler.
-Transient network/API exceptions are logged and retried by default in
-`heartbeat-loop`; pass `--stop-on-error 1` only for debugging.
-On the current test account, `/cc/cloudPc/heartbeat/v2` returned:
-
-```json
-{
-  "acceptedByClientLogic": true,
-  "code": 4041,
-  "msg": "当前云电脑处于解锁状态,且无密码",
-  "businessCode": "90020129"
-}
-```
-
-Docker:
+Short RAP/ZIME UDP transport probe:
 
 ```bash
-docker compose build
-docker compose run --rm cmcc-cloud-alive sms-send <phone>
-docker compose run --rm cmcc-cloud-alive sms-login <phone> <code>
-docker compose run --rm cmcc-cloud-alive list
-CMCC_USER_SERVICE_ID=<userServiceId> docker compose --profile loop up -d
+python3 bin/cmcc_cloud_alive.py rap-zime-udp-probe \
+  --runner-input reports/rap-zime-runner-input.json \
+  --target <host:port>
 ```
 
-For packet-capture verification in Docker, run with host networking or grant
-capture capability:
+This probe validates the outer UDP transport only. It is not a desktop
+keepalive proof.
+
+Inspect the native ZIME bridge without running native code:
 
 ```bash
-docker run --rm --network host --cap-add NET_RAW --cap-add NET_ADMIN \
-  -e CMCC_ALIVE_STATE=/state/state.json \
-  -v cmcc-cloud-alive-state:/state \
-  cmcc-cloud-alive:local verify-http <userServiceId> --duration-ms 120000
+python3 bin/cmcc_cloud_alive.py zime-native-bridge
 ```
 
-Analyze external CAG traffic:
+Offline native experiment with fake external transport callbacks only:
 
 ```bash
-node bin/cmcc-cloud-alive.js analyze-cag /path/to/cag.pcap --limit 80
-node bin/cmcc-cloud-alive.js extract-cag-tunnel-flow /path/to/cag.pcap --from SEC.USEC --to SEC.USEC
+python3 bin/cmcc_cloud_alive.py zime-native-bridge \
+  --display-init \
+  --allow-native-run \
+  --report-file reports/zime-native-bridge-display-init.json
 ```
 
-Analyze local loopback SPICE traffic:
+Even a successful native bridge report is research evidence only. It still must
+be followed by a real protocol runner and `verified-run`. With fake transport,
+the default channel-created wait is expected to stop at
+`native_channel_created_pending`; use `--wait-channel-created-ticks 0` only when
+you need to compare the older immediate stream-creation behavior.
+
+Experimental UDP-backed native transport, still not a keepalive proof:
 
 ```bash
-node bin/cmcc-cloud-alive.js analyze-loopback /path/to/loopback.pcap
+python3 bin/cmcc_cloud_alive.py zime-native-bridge \
+  --allow-native-run \
+  --read-iov-payload \
+  --runner-input reports/rap-zime-runner-input.json
 ```
 
-Run an offline local-SPICE proof fixture:
+`--runner-input` auto-fills the RAP UDP target, tunnel ID, RAP wire mode, and
+channel-context remote address. `--udp-transport-target` and
+`--udp-rap-tunnel-id` remain available for explicit overrides. By default the
+bridge performs extra `ZIME_DataChannelProcess2` / UDP-drain ticks waiting for
+`native_channel_created` before stream creation. Use
+`--wait-channel-created-ticks 0` only for legacy offline probing.
 
-```bash
-node bin/cmcc-cloud-alive.js spice-offline-proof
-```
+The report includes `nativeMilestones`, which summarizes whether the probe
+reached packet-out, UDP send/receive, `ZIME_ReceiveData`,
+`native_channel_created`, user stream creation, and `DISPLAY_INIT`. A milestone
+summary is still diagnostic only; it is not a keepalive proof.
 
-This reconstructs the Linux local display-channel success boundary without
-network access or SDK startup: display `DISPLAY_INIT`, server `SET_ACK` and
-`PING`, client `ACK_SYNC` and `PONG`, then display `SURFACE_CREATE`/`MARK`.
-It proves the local plaintext state machine and byte encoders before those
-bytes are carried through CAG/ZIME.
+Use `--udp-transport-mode raw` only when testing a raw native ZIME UDP endpoint.
+For the family Linux path, RAP wrapping is the expected experiment boundary,
+but the exact payload wrapper and reserve bytes still need live validation. The
+RAP data-frame payload can now be varied with
+`--udp-rap-payload-envelope raw|len16|strip-reserve4-len16`:
 
-Correlate an official-client research CAG capture with a synchronized local
-loopback SPICE capture:
+- `raw` keeps the previous behavior and places the native packet-out directly
+  inside the RAP data-frame payload.
+- `len16` sends `uint16_le(len(native)) + native` and strips the length on
+  receive before calling `ZIME_ReceiveData`.
+- `strip-reserve4-len16` sends `uint16_le(len(native[4:])) + native[4:]` and
+  restores a four-byte zero reserve prefix on receive.
 
-```bash
-node bin/cmcc-cloud-alive.js correlate-cag-loopback \
-  /path/to/cag.pcap /path/to/loopback.pcap --window-ms 80 --limit 12
-```
+These modes are handshake experiments only. They are still session-owning when
+used against a live RAP/ZTEC target and are not keepalive proof.
 
-This is an offline research tool. It identifies the external CAG/ZIME packet
-families surrounding proven local SPICE events such as `DISPLAY_INIT`,
-`SURFACE_CREATE`, `DRAW_COPY`, and `MARK`; it does not start the official SDK
-client or send live protocol packets.
+Native packet-out records may contain multiple iovec segments. The default
+`--udp-packet-out-iov-mode concat` preserves the original behavior and sends the
+concatenated iovec payload as one datagram. Experimental
+`--udp-packet-out-iov-mode split` sends each captured iovec segment as a
+separate UDP/RAP datagram so live tests can compare against trace-sized RAP
+data frames.
 
-Capture a short official SDK run for protocol research only:
+When `--runner-input` contains `rapDataFrameSendTemplates`, the default
+`--udp-rap-template-mode auto` uses those observed send-side 0x81 header
+templates by payload kind. `static` keeps the old single-template behavior, and
+`sequence` walks the observed templates in order.
 
-```bash
-sudo scripts/capture-official-cag-research.sh <userServiceId> 20
-node bin/cmcc-cloud-alive.js extract-cag-handshake /tmp/cmcc-cloud-alive-research-cag-YYYYmmdd-HHMMSS.pcap
-```
+The probe logs JSONL records for:
 
-This helper starts the legacy `yidongyun` SDK wrapper briefly as an oracle and
-then stops it. It is not used by the protocol implementation or Docker runtime.
+- `ZIME_CreateDataEngine`
+- `ZIME_Init`
+- `ZIME_SetDataChannelCallback`
+- `ZIME_SetDataExternalTransport`
+- `ZIME_CreateDataChannel`
+- `ZIME_CreateDataStream`
+- `ZIME_SendData`
+- `ZIME_SendData2`
+- `ZIME_ReceiveData`
+- `ZIME_DataChannelProcess2`
 
-## Docker
+It records channel/stream IDs, return values, buffer lengths, payload hex
+prefixes, and coarse payload classification such as `spice-link`,
+`spice-display-init`, `spice-surface-create`, or `chuanyun-frame`. It does not
+modify return values or inject keepalive behavior.
 
-Build:
+When callback wrapping is enabled, the probe emits `zime_packet_spec` records
+for `TransportBatchImplC::OnSendData_Batch` / `ZIMETransport.OnSendData_Batch`.
+The analyzer summarizes them under `zimePacketSpecs`. These entries describe
+candidate iovec/socket-address fields for protected UDP packets; they are
+trace-only metadata and are not replayable SPICE plaintext.
 
-```bash
-docker build -t cmcc-cloud-alive:local .
-```
+## Verification Rule
 
-Run analyzer against a mounted capture:
+No route is considered complete until a long run satisfies all of these:
 
-```bash
-docker run --rm -v "$PWD/captures:/captures:ro" \
-  --name cmcc-cloud-alive-analyze \
-  cmcc-cloud-alive:local \
-  analyze-cag /captures/cag.pcap --limit 80
-```
+- Target is the ordinary family cloud PC.
+- Official GUI client is not silently keeping the desktop alive unless the run
+  is explicitly a contaminated control.
+- Every minute has an independent power-state snapshot.
+- No snapshot reports `已关机` or non-running.
+- The run reaches at least 40 minutes.
+- The protocol trace shows the display path reached at least
+  `DISPLAY_INIT` and Surface/MARK or equivalent display activity.
 
-Compose:
-
-```bash
-docker compose run --rm cmcc-cloud-alive help
-```
-
-Login and run the HTTP heartbeat loop inside Docker:
-
-```bash
-docker compose run --rm cmcc-cloud-alive sms-send <phone>
-docker compose run --rm cmcc-cloud-alive sms-login <phone> <code>
-docker compose run --rm cmcc-cloud-alive list
-docker compose run --rm cmcc-cloud-alive heartbeat-loop <userServiceId> --interval-ms 30000
-```
-
-For local migration testing, an existing legacy state file can be mounted
-read-only instead of copying secrets into the image:
-
-```bash
-docker run --rm \
-  --name cmcc-cloud-alive-heartbeat \
-  -v /etc/yidongyun/state.json:/etc/yidongyun/state.json:ro \
-  cmcc-cloud-alive:local heartbeat <userServiceId>
-```
-
-Run the loop persistently with Docker restart policy:
-
-```bash
-CMCC_USER_SERVICE_ID=<userServiceId> CMCC_INTERVAL_MS=30000 \
-  docker compose --profile loop up -d cmcc-cloud-alive-loop
-
-docker compose logs -f cmcc-cloud-alive-loop
-docker compose --profile loop stop cmcc-cloud-alive-loop
-```
-
-The Docker image, compose services, containers, and volumes use
-`cmcc-cloud-alive*` names. They intentionally do not reuse the legacy
-`yidongyun*` names.
-
-## Development Notes
-
-Keep the protocol project separate from legacy SDK-wrapper implementations.
-Official client binaries may be used only as a research oracle for captures and
-plaintext comparison. Production protocol mode must replace them with native
-protocol code.
-
-See [docs/protocol-keepalive.md](docs/protocol-keepalive.md) for the current
-protocol map, capture evidence, implementation plan, and unresolved boundaries.
+Accepted service responses are evidence, not success.

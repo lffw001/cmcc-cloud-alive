@@ -1,0 +1,48 @@
+{
+  "applied_at": "2026-07-04T09:00:40.064379Z",
+  "base_graph_hash": "9d98f1b398fcbe94716c5d6de2f8058f31ff534fedae2769087f1a0eace9126d",
+  "base_summary": {
+    "edge_count": 59,
+    "node_count": 49,
+    "workspace_path": "/home/demo/restore/cmcc-cloud-alive"
+  },
+  "changes": [
+    {
+      "action": "update_node",
+      "fields": {
+        "evidence": [
+          "reports/kcp-auth-from-cag-live-type102-access-token-localbind-20260704.json：explicitBindBeforeSend=true, stage=auth_head, responses=0",
+          "docs/delivery-handoff.md 第 56 节：记录 local bind live no-ACK 结论",
+          "reports/ida-udp-session-source-port-20260704.json：官方 UDP session/source-port 证据"
+        ],
+        "progress": 96,
+        "progress_source": "type102_access_token_localbind_live_auth_head_noack",
+        "requirements": [
+          "不得重复执行同一 type102/accessToken + local bind 0 短测，除非 fresh session 条件或 bind 策略发生变化",
+          "未拿到 AUTH_HEAD_ACK/AUTH_ACK/SYNACK 前不得创建 ZIME channel 或发送 DISPLAY_INIT",
+          "下一步优先 fresh official UDP trace 或补全 ice_create_fd/udp_get_local_port/send_udt_data 语义"
+        ],
+        "summary": "真实 AUTH/SYNACK 短测继续推进：新增 source-port bind 实验后，type102/accessToken + --local-bind-host 0.0.0.0 --local-bind-port 0 live 已确认本地显式 bind 生效，但仍在 AUTH_HEAD 阶段 responses=0，无 AUTH_HEAD_ACK/AUTH_ACK/SYNACK。单纯显式 bind 临时本地端口不是充分解释，下一步需 fresh official UDP trace 或继续恢复官方 listen/session 生命周期。"
+      },
+      "id": "TF-0041"
+    },
+    {
+      "action": "update_node",
+      "fields": {
+        "evidence": [
+          "reports/kcp-auth-from-cag-live-type102-access-token-localbind-20260704.json",
+          "docs/delivery-handoff.md 第 56 节"
+        ],
+        "progress": 76,
+        "progress_source": "local_bind_zero_branch_excluded_live",
+        "summary": "AUTH_HEAD 无 ACK 风险新增排除项：type102/accessToken 在显式 local bind 到 0.0.0.0:0 后仍无 UDP response。因此问题不只是 Python 未显式绑定临时本地 UDP source port；仍需确认官方 listen_udp_data_thread、udp_get_tcp_link_info、create_fd_session(TN_UDP_CLD_SOCK)、thread kcp_list 或 CAG 前置会话绑定。"
+      },
+      "id": "TF-0044"
+    }
+  ],
+  "created_at": "2026-07-04T09:00:39.841930Z",
+  "proposal_id": "TFP-20260704-type102-localbind-live-noack",
+  "rationale": "完成一次 session-owning type102/accessToken + explicit local bind live 短测；结果仍停在 AUTH_HEAD 无 ACK，应记录为排除单纯临时端口未显式 bind 的分支，避免重复空转。",
+  "session_id": "session-20260704-type102-localbind-live-noack",
+  "status": "applied"
+}

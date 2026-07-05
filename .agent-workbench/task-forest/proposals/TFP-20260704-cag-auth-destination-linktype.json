@@ -1,0 +1,111 @@
+{
+  "applied_at": "2026-07-04T09:45:28.855620Z",
+  "base_graph_hash": "8645c7bf20e82c685e047af2877c18227f6b92c24039c050dfc213e4e3d69c12",
+  "base_summary": {
+    "edge_count": 61,
+    "node_count": 51,
+    "workspace_path": "/home/demo/restore/cmcc-cloud-alive"
+  },
+  "changes": [
+    {
+      "action": "add_node",
+      "alias": "cag-auth-destination-linktype",
+      "node": {
+        "acceptance_criteria": [
+          "type101 默认 link_type=11 写 gateway 目标",
+          "type101 显式 link_type=140 写 VM 目标",
+          "type102/accessToken 默认 link_type=11 写 gateway 目标",
+          "相关聚焦测试通过",
+          "docs/delivery-handoff.md 更新第 59 节"
+        ],
+        "confidence": 0.9,
+        "context_tags": [
+          "cmcc-cloud-alive",
+          "KCP",
+          "CAG",
+          "AUTH_HEAD",
+          "link_type"
+        ],
+        "difficulty": "medium",
+        "evidence": [
+          "reports/ida-libspice-zime-auth-source-20260704.json：deal_udt_using_cag/deal_udt_using_cag_uac 目标选择伪代码",
+          "cmcc_cloud_alive/rap_zime.py：新增 _cag_material_destination 并更新 type101/type102 material builder",
+          "tests/test_python_modules.py：test_rap_zime_cag_type101_material_uses_link_type_destination_rules",
+          "docs/delivery-handoff.md 第 59 节",
+          "python3 -m unittest 相关 5 个聚焦测试：OK"
+        ],
+        "kind": "subtask",
+        "priority": 1,
+        "progress": 100,
+        "progress_source": "implemented_focused_tests_passed_handoff_updated",
+        "remaining_minutes_max": 0,
+        "remaining_minutes_min": 0,
+        "requirements": [
+          "默认 link_type=11 不得再优先写 VM dest",
+          "显式 link_type=140 才使用 VM dest",
+          "type101 与 type102/UAC 目标选择规则保持一致",
+          "summary 不保存网关、VM IP/port、token、账号、密码、connectStr 或 authBuffer 明文",
+          "不得把本地测试通过当成 AUTH_HEAD_ACK/SYNACK/display path 成功"
+        ],
+        "status": "done",
+        "summary": "新增 _cag_material_destination()，使 type101/type102 CAG material builder 按 IDA 规则选择 auth buffer 目标：默认 link_type=11 写 gateway，link_type=139 写 ice host/port，link_type=140 才写 VM proxy。summary 只记录 destinationSource 和 linkTypeSelectionEvidence，不泄露目标明文。",
+        "title": "按 link_type 修正 CAG auth buffer 目标选择"
+      }
+    },
+    {
+      "action": "add_edge",
+      "edge": {
+        "confidence": 0.88,
+        "reason": "该修正直接服务于确认 AUTH_HEAD 前官方 CAG/session 绑定和目标选择行为。"
+      },
+      "from": "cag-auth-destination-linktype",
+      "to": "TF-0051",
+      "type": "child_of"
+    },
+    {
+      "action": "update_node",
+      "fields": {
+        "progress": 25,
+        "progress_source": "link_type_destination_mismatch_fixed",
+        "status": "in_progress",
+        "summary": "确认 AUTH_HEAD 前官方 CAG/session 绑定行为的工作已有一个具体收获：builder 默认 link_type=11 写 VM dest 的偏差已修正为 gateway 目标。下一步若 live 重测，必须明确区分 link_type=11 gateway 与 link_type=140 vm_proxy，不能混用。"
+      },
+      "id": "TF-0051"
+    },
+    {
+      "action": "update_node",
+      "fields": {
+        "progress": 88,
+        "progress_source": "auth_buffer_destination_linktype_mismatch_fixed",
+        "status": "in_progress",
+        "summary": "AUTH_HEAD 无 ACK 风险进一步收敛：已排除 g_tcp_listen_port/source-port 误解，并修正 builder 目标选择偏差。默认 link_type=11 现在按官方写 gateway；VM dest 只与 link_type=140 对应。仍需通过 fresh live/official trace 验证是否能拿到 AUTH_HEAD_ACK。"
+      },
+      "id": "TF-0044"
+    },
+    {
+      "action": "update_node",
+      "fields": {
+        "progress": 97,
+        "progress_source": "cag_auth_destination_builder_aligned_with_ida",
+        "status": "in_progress",
+        "summary": "真实 AUTH/SYNACK 短测工具继续收敛：type101/type102 auth buffer builder 已按 IDA link_type 规则修正目标选择，默认 link_type=11 写 gateway，link_type=140 写 VM proxy。仍未进行修正后的 live 短测，仍未拿到 AUTH_HEAD_ACK/SYNACK。"
+      },
+      "id": "TF-0041"
+    },
+    {
+      "action": "update_node",
+      "fields": {
+        "progress": 100,
+        "progress_source": "handoff_updated_for_cag_auth_destination_linktype",
+        "status": "in_progress",
+        "summary": "交接文档已更新到第 59 节，记录 IDA 目标选择事实、builder 修正、聚焦测试结果和后续 live 重测注意事项。"
+      },
+      "id": "TF-0010"
+    }
+  ],
+  "created_at": "2026-07-04T09:45:28.636249Z",
+  "proposal_id": "TFP-20260704-cag-auth-destination-linktype",
+  "rationale": "继续排查 AUTH_HEAD 无 ACK 时发现一个实际代码偏差：IDA deal_udt_using_cag/deal_udt_using_cag_uac 证据显示默认 link_type=11 应写 gateway host/proxy_sport 或 proxy_port，只有 sock link flag 2/link_type=140 才写 VM dest；现有 builder 默认 link_type=11 却优先写 VM dest。已按 IDA 修正 type101/type102 material builder，并补测试和交接文档。",
+  "session_id": "session-20260704-cag-auth-destination-linktype",
+  "status": "applied"
+}

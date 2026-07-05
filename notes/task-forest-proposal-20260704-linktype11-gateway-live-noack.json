@@ -1,0 +1,110 @@
+{
+  "proposal_id": "TFP-20260704-linktype11-gateway-live-noack",
+  "session_id": "session-20260704-linktype11-gateway-live-noack",
+  "rationale": "按第 59 节修正后的 CAG auth destination/link_type 规则执行最小 session-owning live 短测：先重登恢复登录态，再分别运行 type101 link_type=11 gateway 和 type102/accessToken link_type=11 gateway。两者 report 均显示 destinationSource=proxy_gateway、destFromVmArgs=false，但仍停在 AUTH_HEAD 无 ACK。该结果排除了“默认 link_type=11 仍误写 VM dest”为唯一阻塞，后续应恢复 proxy_sock->data_buf[224] 来源、get_proxy_kcp_dst_* 判定或抓 fresh official UDP trace。",
+  "status": "proposed",
+  "changes": [
+    {
+      "action": "add_node",
+      "alias": "linktype11-gateway-live-noack",
+      "node": {
+        "title": "完成 link_type=11 gateway 修正后 live AUTH 短测",
+        "kind": "subtask",
+        "status": "done",
+        "summary": "重登成功后执行两次 session-owning live 短测：type101 gateway 与 type102/accessToken gateway 均使用 link_type=11、destinationSource=proxy_gateway、destFromVmArgs=false。两者均发送 AUTH_HEAD 71 字节但 responses=0，未收到 AUTH_HEAD_ACK/AUTH_ACK/SYNACK，未进入 display path。",
+        "requirements": [
+          "live 短测必须标注 session-owning",
+          "报告不得保存 token、accessToken、账号密码、connectStr、CAG target、VM IP 或 authBuffer 明文",
+          "未拿到 SYNACK 前不得创建 ZIME channel 或发送 DISPLAY_INIT",
+          "不得把 AUTH_HEAD 发送或 HTTP/CAG material 获取当成协议保活成功"
+        ],
+        "acceptance_criteria": [
+          "type101 report 显示 linkType=11、destinationSource=proxy_gateway、destFromVmArgs=false",
+          "type102/accessToken report 显示 linkType=11、destinationSource=proxy_gateway、destFromVmArgs=false",
+          "两份 report 都记录 AUTH_HEAD 无 ACK/SYNACK",
+          "docs/delivery-handoff.md 更新第 60 节"
+        ],
+        "progress": 100,
+        "progress_source": "live_linktype11_gateway_auth_head_noack",
+        "priority": 1,
+        "difficulty": "medium",
+        "remaining_minutes_min": 0,
+        "remaining_minutes_max": 0,
+        "confidence": 0.9,
+        "context_tags": [
+          "cmcc-cloud-alive",
+          "KCP",
+          "CAG",
+          "AUTH_HEAD",
+          "live-short-test"
+        ],
+        "evidence": [
+          "token-check：re-login ok，response.code=2000",
+          "reports/kcp-auth-from-cag-live-linktype11-gateway-20260704.json：type101 gateway AUTH_HEAD no ACK",
+          "reports/kcp-auth-from-cag-live-type102-access-token-linktype11-gateway-20260704.json：type102/accessToken gateway AUTH_HEAD no ACK",
+          "docs/delivery-handoff.md 第 60 节"
+        ]
+      }
+    },
+    {
+      "action": "add_edge",
+      "from": "linktype11-gateway-live-noack",
+      "to": "TF-0051",
+      "type": "child_of",
+      "edge": {
+        "reason": "该 live 结果验证了修正后的 link_type=11/gateway 目标选择，但仍未得到 AUTH_HEAD_ACK，直接服务于 AUTH_HEAD 前官方 CAG/session 绑定排查。",
+        "confidence": 0.9
+      }
+    },
+    {
+      "action": "update_node",
+      "id": "TF-0051",
+      "fields": {
+        "status": "in_progress",
+        "progress": 45,
+        "progress_source": "linktype11_gateway_live_noack_after_builder_fix",
+        "summary": "确认 AUTH_HEAD 前官方 CAG/session 绑定行为的工作继续收敛：修正后的 type101/type102 gateway live 均确认 destinationSource=proxy_gateway、destFromVmArgs=false，但仍 AUTH_HEAD 无 ACK。下一步应恢复 proxy_sock->data_buf[224] 来源、get_proxy_kcp_dst_ip/get_proxy_kcp_dst_port 判定，或抓 fresh official UDP trace 看 AUTH_HEAD 前是否有 CAG/session 绑定包。"
+      }
+    },
+    {
+      "action": "update_node",
+      "id": "TF-0044",
+      "fields": {
+        "status": "in_progress",
+        "progress": 90,
+        "progress_source": "linktype11_gateway_live_still_auth_head_noack",
+        "summary": "AUTH_HEAD 无 ACK 风险进一步收敛：已排除 g_tcp_listen_port/source-port 误解、默认 auth buffer 误写 VM dest、type101 gateway 与 type102/accessToken gateway 作为直接修复点。修正后 live 仍无 UDP response，剩余高价值方向是官方 CAG/session 绑定、proxy_sock link flag 来源或 fresh official UDP trace。"
+      }
+    },
+    {
+      "action": "update_node",
+      "id": "TF-0041",
+      "fields": {
+        "status": "in_progress",
+        "progress": 97,
+        "progress_source": "fresh_linktype11_gateway_live_noack",
+        "summary": "真实 AUTH/SYNACK 短测工具已用修正后的 link_type=11 gateway 路径完成 type101 与 type102/accessToken live 验证。两者均 AUTH_HEAD 无 ACK，仍未拿到 AUTH_ACK/SYNACK，不能进入 ZIME channel 或 DISPLAY_INIT。"
+      }
+    },
+    {
+      "action": "update_node",
+      "id": "TF-0001",
+      "fields": {
+        "status": "in_progress",
+        "progress": 72.8,
+        "progress_source": "linktype11_gateway_live_noack_display_path_not_reached",
+        "summary": "协议 runner 仍未到达 AUTH_HEAD_ACK/SYNACK/ZIME channel/DISPLAY_INIT/40 分钟 verified-run；本轮完成修正后 link_type=11 gateway live 验证，但 type101/type102 仍无 ACK。下一步转向官方 link flag/session 绑定或 fresh official UDP trace。"
+      }
+    },
+    {
+      "action": "update_node",
+      "id": "TF-0010",
+      "fields": {
+        "status": "in_progress",
+        "progress": 100,
+        "progress_source": "handoff_updated_for_linktype11_gateway_live_noack",
+        "summary": "交接文档已更新到第 60 节，记录登录过期、token-check 重登成功、两次 link_type=11/gateway live no-ACK 结果和下一步排查方向。"
+      }
+    }
+  ]
+}

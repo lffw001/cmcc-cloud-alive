@@ -1,0 +1,222 @@
+{
+  "applied_at": "2026-07-03T14:51:51.871032Z",
+  "base_graph_hash": "59dda8aff943b99ce5fe83353c080f58da93cd49635d304c69b10315e8f2493e",
+  "base_summary": {
+    "edge_count": 22,
+    "node_count": 20,
+    "workspace_path": "/home/demo/restore/cmcc-cloud-alive"
+  },
+  "changes": [
+    {
+      "action": "add_node",
+      "alias": "low-probe-official-validation-failed",
+      "node": {
+        "acceptance_criteria": [
+          "截图和进程证据证明退回客户端本体",
+          "SDK 日志脱敏摘要显示 SPICE_OUTBAND 后 signal[11]",
+          "交接文档记录该路线失败和下一步路线"
+        ],
+        "confidence": 0.9,
+        "difficulty": "low",
+        "evidence": [
+          "用户消息：进入了云桌面几秒后退回客户端本体",
+          "reports/screenshots/official-client-low-probe-returned-client-20260703-224444.png：退回客户端列表页",
+          "进程表：退回后只剩 cmcc-jtydn / bootCypc，未见 uSmartView_VDI_ 常驻",
+          "reports/zime-low-20260703-223950.jsonl：记录数为 0，不能生成 runner input",
+          "官方 SDK 日志脱敏摘要：22:41:18 first frame recv success；22:41:19 QUIC_create_data_stream / SPICE_OUTBAND / catch signal[11] / VDI client crash",
+          "docs/delivery-handoff.md 第 32 节"
+        ],
+        "kind": "subtask",
+        "priority": 1,
+        "progress": 100,
+        "progress_source": "official_low_probe_validation_failed_with_signal11_evidence",
+        "remaining_minutes_max": 0,
+        "remaining_minutes_min": 0,
+        "requirements": [
+          "记录用户观察，不把这次误判为没点击成功",
+          "不把 low trace 当作 runner input",
+          "不继续升级更高侵入的 transport/callback/cpp probe 官方 GUI trace"
+        ],
+        "status": "done",
+        "summary": "ZIME_PROBE_MODE=low 下点击家庭云电脑畅享版月包后确实短暂进入云桌面，但数秒后退回客户端本体；官方 SDK 日志显示 first frame 后在 QUIC_create_data_stream / SPICE_OUTBAND 路径 catch signal[11]，low probe JSONL 为空。",
+        "title": "验证 low probe 官方连接仍在 SPICE_OUTBAND 后崩溃"
+      }
+    },
+    {
+      "action": "add_edge",
+      "edge": {
+        "confidence": 0.9,
+        "reason": "这是低侵入 probe 路线的官方验证结果，决定该路线不能继续升级抓 trace。"
+      },
+      "from": "low-probe-official-validation-failed",
+      "to": "TF-0019",
+      "type": "child_of"
+    },
+    {
+      "action": "add_node",
+      "alias": "ldpreload-zime-api-risk",
+      "node": {
+        "acceptance_criteria": [
+          "新 fresh runner input 来自无 LD_PRELOAD 外部抓取或静态分析辅助",
+          "官方 no-probe 连接保持稳定后再提取 display path 材料"
+        ],
+        "confidence": 0.82,
+        "difficulty": "high",
+        "evidence": [
+          "第 30 节：无 probe 官方短测稳定进入 Win10 超过 7 分钟",
+          "第 32 节：low probe 仍在 SPICE_OUTBAND 后 signal[11] 崩溃"
+        ],
+        "kind": "risk",
+        "priority": 1,
+        "progress": 60,
+        "progress_source": "low_probe_still_crashes_after_no_probe_stable",
+        "requirements": [
+          "不要再把 LD_PRELOAD probe 作为官方 GUI trace 默认路线",
+          "不升级到 transport/callback/cpp 模式抓官方 GUI trace，除非已有非 GUI 隔离验证",
+          "保留 probe 代码用于离线/受控 native bridge 研究，不作为当前官方复抓首选"
+        ],
+        "status": "in_progress",
+        "summary": "即使默认 probe 不再导出底层 transport 或 C++ callback 符号，官方 vdi client 仍在 first frame 后 SPICE_OUTBAND 路径 signal[11]；后续官方 trace 优先改用无 LD_PRELOAD 外部采样。",
+        "title": "风险：LD_PRELOAD 或 ZIME API interpose 仍会诱发 vdi client 崩溃"
+      }
+    },
+    {
+      "action": "add_edge",
+      "edge": {
+        "confidence": 0.86,
+        "reason": "该风险细化了 zime-probe 诱发 SPICE_OUTBAND 崩溃的范围。"
+      },
+      "from": "ldpreload-zime-api-risk",
+      "to": "TF-0016",
+      "type": "child_of"
+    },
+    {
+      "action": "add_node",
+      "alias": "external-no-ldpreload-trace",
+      "node": {
+        "acceptance_criteria": [
+          "官方 no-probe 连接稳定进入 Win10，不出现 signal[11]",
+          "pcap/tshark 摘要识别外层 UDP/TCP 流和候选 RAP/ZIME/ZTEC target",
+          "analyze-rap-zime 或新转换工具能生成 runner input",
+          "check-rap-zime-runner-input --require-templates 通过"
+        ],
+        "confidence": 0.75,
+        "difficulty": "high",
+        "evidence": [
+          "本机可用 tcpdump、tshark、dumpcap、ss、lsof、bpftrace、strace",
+          "low probe JSONL 为空且 SDK 日志仍 signal[11]，需要无 LD_PRELOAD 路线"
+        ],
+        "kind": "task",
+        "priority": 1,
+        "progress": 0,
+        "progress_source": "ready_after_low_probe_validation_failed",
+        "remaining_minutes_max": 240,
+        "remaining_minutes_min": 90,
+        "requirements": [
+          "官方 GUI 点击前仍必须先截图确认家庭云电脑畅享版月包",
+          "点击使用窗口内相对坐标，不操作 CrossDesk",
+          "抓包和日志不得输出 token、connectStr、accessToken、cpsid、手机号、密码、JWT、vmId、userServiceId 等敏感明文",
+          "优先 no-probe 稳定进入 Win10 后再提取 display path 材料"
+        ],
+        "status": "ready",
+        "summary": "停止官方进程内 LD_PRELOAD 采样，改用 tcpdump/dumpcap/tshark 抓 no-probe 官方稳定连接的外层流量，并用 ss/lsof/bpftrace 只读观察 socket peer，必要时结合 IDA/r2 静态分析补齐 RAP/ZIME runner input 字段。",
+        "title": "用无 LD_PRELOAD 外部抓取重新获取官方 display path trace"
+      }
+    },
+    {
+      "action": "add_edge",
+      "edge": {
+        "confidence": 0.82,
+        "reason": "外部抓取是重新获得当前有效 official trace 和 runner input 的新主路线。"
+      },
+      "from": "external-no-ldpreload-trace",
+      "to": "TF-0005",
+      "type": "child_of"
+    },
+    {
+      "action": "add_edge",
+      "edge": {
+        "confidence": 0.78,
+        "reason": "该路线绕开 LD_PRELOAD/probe 崩溃风险。"
+      },
+      "from": "external-no-ldpreload-trace",
+      "to": "TF-0016",
+      "type": "contributes_to"
+    },
+    {
+      "action": "update_node",
+      "fields": {
+        "acceptance_criteria": [
+          "低侵入 probe 代码和脚本本地验证通过",
+          "官方 low trace 验证结果已记录为失败",
+          "任务图明确下一步转向无 LD_PRELOAD 外部抓取"
+        ],
+        "evidence": [
+          "低侵入 probe 三类 .so 编译通过，默认版符号表已收缩",
+          "compileall 通过，80 tests OK",
+          "用户确认 low probe 下进入云桌面几秒后退回客户端本体",
+          "reports/zime-low-20260703-223950.jsonl：记录数 0",
+          "SDK 日志脱敏摘要：SPICE_OUTBAND 后 signal[11] / VDI client crash",
+          "docs/delivery-handoff.md 第 31、32 节"
+        ],
+        "progress": 70,
+        "progress_source": "code_done_but_official_low_trace_failed_needs_route_review",
+        "remaining_minutes_max": 30,
+        "remaining_minutes_min": 0,
+        "requirements": [
+          "保留低侵入 probe 代码用于离线/受控研究",
+          "不继续升级 transport/callback/cpp 模式抓官方 GUI trace",
+          "官方 fresh trace 改用无 LD_PRELOAD 外部抓取路线",
+          "不输出敏感连接材料"
+        ],
+        "status": "review_needed",
+        "summary": "低侵入 probe 的代码和脚本已实现并本地验证，但官方 low trace 验证失败：用户确认短暂进入云桌面后退回客户端，SDK 日志显示 SPICE_OUTBAND 后 signal[11]，且 low probe JSONL 为空。该路线需要复核后降级为受控研究工具，不再作为官方 GUI trace 优先路线。"
+      },
+      "id": "TF-0019"
+    },
+    {
+      "action": "update_node",
+      "fields": {
+        "evidence": [
+          "reports/zime-transport-20260703-193100-fresh.jsonl：前次带 probe 官方连接瞬退 trace",
+          "reports/rap-zime-20260703-193100-fresh-instant-exit.final.readiness.json：前次 trace 缺 RAP/ZIME live 短测必要字段",
+          "docs/delivery-handoff.md 第 30 节：无 probe 官方短测成功进入 Win10，uSmartView_VDI_ 存活超过 7 分钟",
+          "docs/delivery-handoff.md 第 31 节：低侵入 zime-probe 模式已实现并本地验证",
+          "docs/delivery-handoff.md 第 32 节：low probe 官方验证失败，下一步切到无 LD_PRELOAD 外部抓取"
+        ],
+        "progress": 50,
+        "progress_source": "route_changed_to_external_capture_after_low_probe_crash",
+        "summary": "重新抓 official trace 的主路线从 LD_PRELOAD/zime-probe 改为无 LD_PRELOAD 外部抓取。原因是 low probe 仍在 SPICE_OUTBAND 后 signal[11] 且 JSONL 为空；下一步使用 tcpdump/dumpcap/tshark、ss/lsof/bpftrace 和 IDA/r2 静态分析组合生成 runner input。"
+      },
+      "id": "TF-0005"
+    },
+    {
+      "action": "update_node",
+      "fields": {
+        "progress": 85,
+        "progress_source": "low_probe_reproduced_signal11_after_no_probe_stable",
+        "summary": "zime-probe 诱发崩溃风险进一步收窄：不只是 transport/C++ callback interpose，连默认 low 模式也与 SPICE_OUTBAND 后 signal[11] 复现相关；后续官方采样应避开 LD_PRELOAD。"
+      },
+      "id": "TF-0016"
+    },
+    {
+      "action": "update_node",
+      "fields": {
+        "evidence": [
+          "docs/delivery-handoff.md 第 28 节记录官方连接瞬退、最终 trace/readiness 结论、GUI 坐标风险和下一步诊断路径",
+          "docs/delivery-handoff.md 第 29 节修正为 first frame 后 SPICE_OUTBAND signal[11] 崩溃，并记录 IDA 可安装但不阻塞无 probe 短测",
+          "docs/delivery-handoff.md 第 30 节记录无 probe 官方短测稳定进入 Win10、窗口内坐标点击和低侵入 probe 下一步",
+          "docs/delivery-handoff.md 第 31 节记录低侵入 zime-probe 模式实现、验证和下一步复抓 trace",
+          "docs/delivery-handoff.md 第 32 节记录 low probe 官方验证失败、SDK 日志 signal[11] 和无 LD_PRELOAD 外部抓取下一步"
+        ],
+        "progress_source": "delivery_handoff_sections_28_to_32_added"
+      },
+      "id": "TF-0010"
+    }
+  ],
+  "created_at": "2026-07-03T14:51:51.650607Z",
+  "proposal_id": "TFP-20260703-low-probe-spice-outband-crash",
+  "rationale": "用户确认 ZIME_PROBE_MODE=low 并不是没点中，而是进入云桌面几秒后退回客户端。官方 SDK 日志显示本轮仍到 first frame，随后在 QUIC_create_data_stream / SPICE_OUTBAND 后 signal[11]，而 low probe JSONL 为空。结论是 LD_PRELOAD/ZIME API interpose 路线仍不可作为官方 trace 优先采样路线，下一步切换到无 LD_PRELOAD 外部 pcap/eBPF/静态分析。",
+  "session_id": "session-20260703-low-probe-spice-outband-crash",
+  "status": "applied"
+}

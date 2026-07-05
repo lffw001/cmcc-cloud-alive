@@ -1,0 +1,19 @@
+2026-07-02 protocol runner checkpoint
+- Project: /home/demo/cmcc-cloud-alive
+- Added: cmcc_cloud_alive/protocol_runner.py minimal stdlib Chuanyun/SPICE protocol runner.
+- Wired: cmcc_cloud_alive/main.py imports protocol_runner, has cmd_protocol_run and protocol-run subcommand.
+- Test file imports added: socket, struct, threading, protocol_runner.
+- Next: insert ProtocolRunnerTest before unittest.main, run pytest, fix failures.
+- Important: tests tail currently ends at lines 1119-1124 with sms assertion then if __name__ == "__main__".
+
+2026-07-02 10:20 extract-sequence checkpoint
+- Plan file: /home/demo/GenericAgent/temp/plan_cmcc_rebuild_gap/plan.md; v2 steps 1-6 completed before this checkpoint.
+- Code changed: cmcc_cloud_alive/zime_probe.py `extract_sequence()` now emits structured `runnerInput` with sourceTrace/focusKind/focusMatches/contextWindow/sequenceRecords/sequence/transportIdentities/implementationUse, plus backward-compatible `runnerInputUse`.
+- Test changed: tests/test_python_modules.py keeps `test_extract_zime_sequence_centers_focus_context` under `ProtocolRunnerTest`; report-path assertions are inside TemporaryDirectory; test now asserts report `runnerInput` shape.
+- Docs changed: docs/delivery-handoff.md appended section 20, documenting completed work, not-done items, ~35% completion, forbidden routes, and next minimal runner task.
+- Target test PASS: `python3 -m unittest tests.test_python_modules.ProtocolRunnerTest.test_extract_zime_sequence_centers_focus_context -v`.
+- Regression PASS: `python3 -m unittest tests.test_python_modules.PythonModuleTests.test_zime_probe_analysis_detects_display_protocol_progress tests.test_python_modules.PythonModuleTests.test_zime_probe_classifies_ssl_short_spice_like_control_packets tests.test_python_modules.PythonModuleTests.test_zime_probe_display_init_seen_on_transport_receive tests.test_python_modules.ProtocolRunnerTest.test_protocol_session_answers_server_messages tests.test_python_modules.ProtocolRunnerTest.test_extract_zime_sequence_centers_focus_context -v`.
+- CLI smoke PASS: `python3 -m cmcc_cloud_alive.main --help`; `python3 -m cmcc_cloud_alive.main extract-zime-sequence --help`.
+- Real report generated and JSON-smoked: /home/demo/restore/cmcc-cloud-alive/reports/runner-sequence-context-20260702-zime-transport.json; ok=True, sequence=7, focusMatches=1, transportIdentities=20, runnerInput=dict, size about 20099 bytes.
+- Remaining risk: no independent RAP/ZIME/SPICE runner yet; no connectStr->socket/TLS/ZIME mapping; no GUI-free 40min verified-run; current report is runner input evidence, not keepalive proof.
+- Next: plan step 8 independent verification; if subagent unavailable, run equivalent adversarial checks for import, CLI help, target test, report JSON structure, doc section path.

@@ -1,0 +1,139 @@
+{
+  "applied_at": "2026-07-03T23:57:23.402178Z",
+  "base_graph_hash": "822ff1327cf24df0cb15be70bbed57f01c2ca3c1beea3678b2765444d5cf9b30",
+  "base_summary": {
+    "edge_count": 43,
+    "node_count": 34,
+    "workspace_path": "/home/demo/restore/cmcc-cloud-alive"
+  },
+  "changes": [
+    {
+      "action": "add_node",
+      "alias": "kcp-auth-preflight",
+      "node": {
+        "acceptance_criteria": [
+          "decode/classify 能识别 KCP auth head/data envelope",
+          "run_kcp_sync_probe 报告包含 authPreflight",
+          "生成 kcp-auth-preflight 静态证据报告",
+          "全量 Python 测试通过"
+        ],
+        "confidence": 0.9,
+        "context_tags": [
+          "cmcc-cloud-alive",
+          "KCP",
+          "auth",
+          "SYNACK",
+          "IDA"
+        ],
+        "difficulty": "medium",
+        "evidence": [
+          "reports/ida-libspice-zime-analysis-20260704-auth.json：ikcp_set_auth_data/deal_kcp_auth_cmd/ikcp_set_auth_data_res IDA 证据",
+          "cmcc_cloud_alive/rap_zime.py：KCP_AUTH_HEAD_CONV、KCP_AUTH_DATA_CONV、build_kcp_auth_segment、authPreflight 报告字段",
+          "tests/test_python_modules.py：test_rap_zime_kcp_auth_preflight_codec 和 sync probe 报告断言",
+          "reports/kcp-auth-preflight-ida-evidence-20260704.json：静态 auth preflight 证据报告",
+          "docs/delivery-handoff.md 第 43 节",
+          "python3 -m unittest discover -s tests -p 'test_python_*.py' -v：87 tests OK"
+        ],
+        "kind": "subtask",
+        "priority": 1,
+        "progress": 100,
+        "progress_source": "implemented_kcp_auth_preflight_codec_report_and_tests",
+        "remaining_minutes_max": 0,
+        "remaining_minutes_min": 0,
+        "requirements": [
+          "不生成、不打印、不保存真实 auth payload",
+          "不读取 .tmp/state.json 或敏感连接材料",
+          "auth payload 必须来自 fresh official trace、可靠静态恢复，或先证明当前路径 auth disabled",
+          "该节点不能作为 display path 或保活成功证明"
+        ],
+        "status": "done",
+        "summary": "IDA 显示 ikcp_set_auth_data 会先发送 auth head/data，deal_kcp_auth_cmd 收到 AUTH_HEAD_ACK/AUTH_ACK 后，ikcp_set_auth_data_res 才调用 ikcp_send_link_sync。已在 Python 中新增 auth head/data KCP envelope codec、payload 分类和 run_kcp_sync_probe 的 authPreflight 报告字段。",
+        "title": "固化 KCP auth preflight 并接入 SYNACK 前置路线"
+      }
+    },
+    {
+      "action": "add_edge",
+      "edge": {
+        "confidence": 0.9,
+        "reason": "auth preflight 是 fresh SYNACK 前置握手路线的一部分，解释为什么只发 SYN 可能无法获得 SYNACK。"
+      },
+      "from": "kcp-auth-preflight",
+      "to": "TF-0029",
+      "type": "child_of"
+    },
+    {
+      "action": "update_node",
+      "id": "TF-0029",
+      "node": {
+        "acceptance_criteria": [
+          "能从 fresh trace 或可靠静态来源恢复 auth head/data，或证明 auth disabled",
+          "sync probe 报告出现 synackReceived=true",
+          "从 SYNACK 提取 conv、use_quic、be_using_stream、outband/pack-check/FEC 协商结果",
+          "native bridge 在前置握手后再调用 ZIME_CreateDataChannel",
+          "不再出现仅 metadata target 的 udp_response_pending 空测"
+        ],
+        "evidence": [
+          "reports/kcp-sync-probe-pcap-metadata-lenmtu-outband-20260704.json：bytesSent=21、clientSyn.len=1400、wndFlags=stream,outband,quic、synackReceived=false",
+          "reports/ida-libspice-zime-analysis-20260704-rerun.json：deal_kcp_sync_ack_cmd 在 SYNACK 后才调用 QUIC_create_data_channel",
+          "reports/kcp-sync-ida-handshake-evidence-20260704.json：SYNACK 匹配和协商解释已结构化",
+          "reports/kcp-auth-preflight-ida-evidence-20260704.json：auth head/data 前置认证证据已结构化",
+          "docs/delivery-handoff.md 第 43 节记录 auth preflight 缺口"
+        ],
+        "progress": 45,
+        "progress_source": "kcp_auth_preflight_identified_and_codec_implemented_synack_still_pending",
+        "requirements": [
+          "优先刷新或恢复会话上下文，不重复只用旧 metadata target 空跑",
+          "旧 trace-derived runner input 只能作为离线字段/模板研究样本，不能作为 live 短测输入",
+          "若 kcp->be_auth 成立，必须先完成 AUTH_HEAD/AUTH_DATA 前置认证或恢复对应 fresh payload",
+          "收到 SYNACK 后必须先接入 conv/use_quic/stream/FEC/headLen 协商摘要，再调用 ZIME_CreateDataChannel",
+          "任何 GUI 点击前必须截图确认并使用窗口内坐标，不操作 CrossDesk",
+          "拿到 SYNACK 前不得创建 ZIME channel 或声称 display path 成功",
+          "不输出 token、connectStr、accessToken、cpsid、手机号、密码、JWT、vmId、userServiceId 等敏感明文",
+          "若要触发官方客户端抓新轨迹，必须先截图确认畅享版客户端窗口和连接按钮位置"
+        ],
+        "summary": "旧 no-probe pcap metadata target 对修正后的 client SYN 仍无响应；当前已排除 len=mtu、outband 默认等本地编码偏差，并固化 SYNACK 匹配/协商字段。本轮进一步确认 client SYN 前可能存在 KCP auth preflight：需要恢复 fresh auth head/data，或证明该路径 auth disabled，然后再期待 live target 返回 SYNACK。"
+      }
+    },
+    {
+      "action": "update_node",
+      "id": "TF-0003",
+      "node": {
+        "evidence": [
+          "cmcc_cloud_alive/zime_native_bridge.py",
+          "cmcc_cloud_alive/rap_zime.py：KCP client SYN 编码、auth preflight codec、run_kcp_sync_probe、idaHandshakeEvidence、synackNegotiation",
+          "reports/kcp-auth-preflight-ida-evidence-20260704.json：静态 auth preflight 证据报告",
+          "reports/kcp-sync-ida-handshake-evidence-20260704.json：静态 IDA 握手解释报告",
+          "python3 -m unittest discover -s tests -p 'test_python_*.py' -v：87 tests OK"
+        ],
+        "progress": 84,
+        "progress_source": "native_bridge_waiting_for_auth_preflight_and_fresh_synack",
+        "requirements": [
+          "短测必须标注 researchOnly 和 sessionOwning",
+          "没有 auth/SYNACK/use_quic 前不得创建 ZIME channel 或 stream",
+          "没有 native_channel_created status=0 前不得发送 DISPLAY_INIT 或声称 display path 成功",
+          "不要重复只用旧 metadata target 运行 raw ZIME 或 KCP SYN 空测",
+          "下一次 live 路线必须优先 fresh auth/SYNACK 或官方 trace 会话上下文"
+        ],
+        "summary": "native bridge 已能 inspect/call libZIMEDataEngine.so、捕获 packet-out、RAP wrapping、UDP 回灌和 nativeMilestones；KCP client SYN/sync probe 已具备，且报告现在能输出 IDA handshake evidence、auth preflight 和 SYNACK negotiation summary。下一步应恢复 fresh auth 或证明 auth disabled，拿到 fresh SYNACK，并把 conv/use_quic/stream/FEC/headLen 接入 native bridge。"
+      }
+    },
+    {
+      "action": "update_node",
+      "id": "TF-0001",
+      "node": {
+        "evidence": [
+          "docs/delivery-handoff.md 第 43 节：KCP auth preflight 缺口已固化",
+          "reports/kcp-auth-preflight-ida-evidence-20260704.json：静态 auth preflight 证据报告",
+          "python3 -m unittest discover -s tests -p 'test_python_*.py' -v：87 tests OK"
+        ],
+        "progress": 71,
+        "progress_source": "kcp_auth_preflight_gap_structured_but_display_path_runner_not_done"
+      }
+    }
+  ],
+  "created_at": "2026-07-03T23:57:01.155488Z",
+  "proposal_id": "TFP-20260704-kcp-auth-preflight",
+  "rationale": "本轮按 task-clarifier 对齐后继续推进协议保活：使用 IDA 证据确认 client SYN 前可能存在 KCP auth preflight，新增 auth head/data envelope codec、报告字段和静态证据报告；测试通过。该进展缩小了 fresh SYNACK 缺口，避免继续把无 SYNACK 误判为单纯 SYN wire 编码问题。",
+  "session_id": "session-20260704-cmcc-protocol-auth-preflight",
+  "status": "applied"
+}

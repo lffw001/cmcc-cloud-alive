@@ -1,9 +1,16 @@
 node_modules/
 npm-debug.log*
+build/
+research/*
+!research/
+!research/zime-probe.c
 .env
 .DS_Store
 coverage/
 captures/
 reports/
+.tmp/
 *.pcap
 *.pcapng
+__pycache__/
+*.pyc

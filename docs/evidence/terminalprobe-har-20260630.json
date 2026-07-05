@@ -1,0 +1,452 @@
+{
+  "ok": true,
+  "inputFiles": [
+    "/home/demo/下载/terminalprobe.soho.komect.com_2026_06_30_19_22_00.har"
+  ],
+  "baselineFiles": [],
+  "sourceFiles": [],
+  "records": 20,
+  "baselineRecords": 0,
+  "observedWindow": {
+    "first": "2026-06-30T11:20:12.178000+00:00",
+    "last": "2026-06-30T11:20:47.945000+00:00",
+    "durationSeconds": 35
+  },
+  "uniqueEndpoints": 14,
+  "endpointCounts": {
+    "POST /point/custom/cc/v1": 5,
+    "POST /terminal/cc/cloudPc/heartbeat/v2": 2,
+    "CONNECT /": 2,
+    "POST /sc/probe-terminal-portal/base/send/v1": 1,
+    "POST /terminal/cc/getCommonManual/v1": 1,
+    "POST /terminal/cc/get/feedbackUrl/v2": 1,
+    "POST /terminal/cc/cloudPc/detail/v1": 1,
+    "POST /terminal/cc/cloudPc/switchList/v1": 1,
+    "POST /terminal/timeZone/display/v1": 1,
+    "POST /terminal/timeZone/margin/v1": 1,
+    "POST /terminal/timeZone/balanceDetails/v1": 1,
+    "POST /sc/probe-terminal-portal/peripheral/send/v1": 1,
+    "POST /terminal/cc/cloudPc/infoReport/v2": 1,
+    "POST /sc/probe-terminal-portal/performance/send/v1": 1
+  },
+  "endpointDetails": [
+    {
+      "endpoint": "POST /point/custom/cc/v1",
+      "apiPath": "/point/custom/cc/v1",
+      "count": 5,
+      "classification": {
+        "class": "analytics_point",
+        "desktopKeepaliveEvidence": "none_by_itself",
+        "risk": "telemetry; do not treat as keepalive without long proof"
+      },
+      "timing": {
+        "first": "2026-06-30T11:20:17.623000+00:00",
+        "last": "2026-06-30T11:20:47.945000+00:00",
+        "durationSeconds": 30,
+        "medianIntervalSeconds": 0.076,
+        "minIntervalSeconds": 0.003,
+        "maxIntervalSeconds": 30.166
+      }
+    },
+    {
+      "endpoint": "CONNECT /",
+      "apiPath": "/",
+      "count": 2,
+      "classification": {
+        "class": "proxy_tunnel_noise",
+        "desktopKeepaliveEvidence": "none",
+        "risk": "ignore"
+      },
+      "timing": {
+        "first": "2026-06-30T11:20:17.644000+00:00",
+        "last": "2026-06-30T11:20:17.651000+00:00",
+        "durationSeconds": 0,
+        "medianIntervalSeconds": 0.007,
+        "minIntervalSeconds": 0.007,
+        "maxIntervalSeconds": 0.007
+      }
+    },
+    {
+      "endpoint": "POST /terminal/cc/cloudPc/heartbeat/v2",
+      "apiPath": "/cc/cloudPc/heartbeat/v2",
+      "count": 2,
+      "classification": {
+        "class": "official_connected_http_timer",
+        "desktopKeepaliveEvidence": "unproven_timer_only",
+        "risk": "accepted response is not sleep-prevention proof; watch 4043 and powered state"
+      },
+      "timing": {
+        "first": "2026-06-30T11:20:16.280000+00:00",
+        "last": "2026-06-30T11:20:47.942000+00:00",
+        "durationSeconds": 31,
+        "medianIntervalSeconds": 31.662,
+        "minIntervalSeconds": 31.662,
+        "maxIntervalSeconds": 31.662
+      }
+    },
+    {
+      "endpoint": "POST /sc/probe-terminal-portal/base/send/v1",
+      "apiPath": "/sc/probe-terminal-portal/base/send/v1",
+      "count": 1,
+      "classification": {
+        "class": "terminalprobe_telemetry",
+        "desktopKeepaliveEvidence": "none_by_itself",
+        "risk": "Windows/terminal telemetry; accepted response is not desktop-session keepalive proof"
+      },
+      "timing": {
+        "first": "2026-06-30T11:20:12.178000+00:00",
+        "last": "2026-06-30T11:20:12.178000+00:00",
+        "durationSeconds": 0,
+        "medianIntervalSeconds": null,
+        "minIntervalSeconds": null,
+        "maxIntervalSeconds": null
+      }
+    },
+    {
+      "endpoint": "POST /sc/probe-terminal-portal/performance/send/v1",
+      "apiPath": "/sc/probe-terminal-portal/performance/send/v1",
+      "count": 1,
+      "classification": {
+        "class": "terminalprobe_telemetry",
+        "desktopKeepaliveEvidence": "none_by_itself",
+        "risk": "Windows/terminal telemetry; accepted response is not desktop-session keepalive proof"
+      },
+      "timing": {
+        "first": "2026-06-30T11:20:47.942000+00:00",
+        "last": "2026-06-30T11:20:47.942000+00:00",
+        "durationSeconds": 0,
+        "medianIntervalSeconds": null,
+        "minIntervalSeconds": null,
+        "maxIntervalSeconds": null
+      }
+    },
+    {
+      "endpoint": "POST /sc/probe-terminal-portal/peripheral/send/v1",
+      "apiPath": "/sc/probe-terminal-portal/peripheral/send/v1",
+      "count": 1,
+      "classification": {
+        "class": "terminalprobe_telemetry",
+        "desktopKeepaliveEvidence": "none_by_itself",
+        "risk": "Windows/terminal telemetry; accepted response is not desktop-session keepalive proof"
+      },
+      "timing": {
+        "first": "2026-06-30T11:20:17.617000+00:00",
+        "last": "2026-06-30T11:20:17.617000+00:00",
+        "durationSeconds": 0,
+        "medianIntervalSeconds": null,
+        "minIntervalSeconds": null,
+        "maxIntervalSeconds": null
+      }
+    },
+    {
+      "endpoint": "POST /terminal/cc/cloudPc/detail/v1",
+      "apiPath": "/cc/cloudPc/detail/v1",
+      "count": 1,
+      "classification": {
+        "class": "inventory_status_or_config",
+        "desktopKeepaliveEvidence": "none_by_itself",
+        "risk": "safe to inspect, not a desktop session holder"
+      },
+      "timing": {
+        "first": "2026-06-30T11:20:14.793000+00:00",
+        "last": "2026-06-30T11:20:14.793000+00:00",
+        "durationSeconds": 0,
+        "medianIntervalSeconds": null,
+        "minIntervalSeconds": null,
+        "maxIntervalSeconds": null
+      }
+    },
+    {
+      "endpoint": "POST /terminal/cc/cloudPc/infoReport/v2",
+      "apiPath": "/cc/cloudPc/infoReport/v2",
+      "count": 1,
+      "classification": {
+        "class": "official_connected_http_timer",
+        "desktopKeepaliveEvidence": "unproven_timer_only",
+        "risk": "accepted response is not sleep-prevention proof; watch 4043 and powered state"
+      },
+      "timing": {
+        "first": "2026-06-30T11:20:21.962000+00:00",
+        "last": "2026-06-30T11:20:21.962000+00:00",
+        "durationSeconds": 0,
+        "medianIntervalSeconds": null,
+        "minIntervalSeconds": null,
+        "maxIntervalSeconds": null
+      }
+    },
+    {
+      "endpoint": "POST /terminal/cc/cloudPc/switchList/v1",
+      "apiPath": "/cc/cloudPc/switchList/v1",
+      "count": 1,
+      "classification": {
+        "class": "inventory_status_or_config",
+        "desktopKeepaliveEvidence": "none_by_itself",
+        "risk": "safe to inspect, not a desktop session holder"
+      },
+      "timing": {
+        "first": "2026-06-30T11:20:14.793000+00:00",
+        "last": "2026-06-30T11:20:14.793000+00:00",
+        "durationSeconds": 0,
+        "medianIntervalSeconds": null,
+        "minIntervalSeconds": null,
+        "maxIntervalSeconds": null
+      }
+    },
+    {
+      "endpoint": "POST /terminal/cc/get/feedbackUrl/v2",
+      "apiPath": "/cc/get/feedbackUrl/v2",
+      "count": 1,
+      "classification": {
+        "class": "inventory_status_or_config",
+        "desktopKeepaliveEvidence": "none_by_itself",
+        "risk": "safe to inspect, not a desktop session holder"
+      },
+      "timing": {
+        "first": "2026-06-30T11:20:14.749000+00:00",
+        "last": "2026-06-30T11:20:14.749000+00:00",
+        "durationSeconds": 0,
+        "medianIntervalSeconds": null,
+        "minIntervalSeconds": null,
+        "maxIntervalSeconds": null
+      }
+    },
+    {
+      "endpoint": "POST /terminal/cc/getCommonManual/v1",
+      "apiPath": "/cc/getCommonManual/v1",
+      "count": 1,
+      "classification": {
+        "class": "inventory_status_or_config",
+        "desktopKeepaliveEvidence": "none_by_itself",
+        "risk": "safe to inspect, not a desktop session holder"
+      },
+      "timing": {
+        "first": "2026-06-30T11:20:14.748000+00:00",
+        "last": "2026-06-30T11:20:14.748000+00:00",
+        "durationSeconds": 0,
+        "medianIntervalSeconds": null,
+        "minIntervalSeconds": null,
+        "maxIntervalSeconds": null
+      }
+    },
+    {
+      "endpoint": "POST /terminal/timeZone/balanceDetails/v1",
+      "apiPath": "/timeZone/balanceDetails/v1",
+      "count": 1,
+      "classification": {
+        "class": "inventory_status_or_config",
+        "desktopKeepaliveEvidence": "none_by_itself",
+        "risk": "safe to inspect, not a desktop session holder"
+      },
+      "timing": {
+        "first": "2026-06-30T11:20:15.006000+00:00",
+        "last": "2026-06-30T11:20:15.006000+00:00",
+        "durationSeconds": 0,
+        "medianIntervalSeconds": null,
+        "minIntervalSeconds": null,
+        "maxIntervalSeconds": null
+      }
+    },
+    {
+      "endpoint": "POST /terminal/timeZone/display/v1",
+      "apiPath": "/timeZone/display/v1",
+      "count": 1,
+      "classification": {
+        "class": "inventory_status_or_config",
+        "desktopKeepaliveEvidence": "none_by_itself",
+        "risk": "safe to inspect, not a desktop session holder"
+      },
+      "timing": {
+        "first": "2026-06-30T11:20:14.836000+00:00",
+        "last": "2026-06-30T11:20:14.836000+00:00",
+        "durationSeconds": 0,
+        "medianIntervalSeconds": null,
+        "minIntervalSeconds": null,
+        "maxIntervalSeconds": null
+      }
+    },
+    {
+      "endpoint": "POST /terminal/timeZone/margin/v1",
+      "apiPath": "/timeZone/margin/v1",
+      "count": 1,
+      "classification": {
+        "class": "inventory_status_or_config",
+        "desktopKeepaliveEvidence": "none_by_itself",
+        "risk": "safe to inspect, not a desktop session holder"
+      },
+      "timing": {
+        "first": "2026-06-30T11:20:15.006000+00:00",
+        "last": "2026-06-30T11:20:15.006000+00:00",
+        "durationSeconds": 0,
+        "medianIntervalSeconds": null,
+        "minIntervalSeconds": null,
+        "maxIntervalSeconds": null
+      }
+    }
+  ],
+  "candidates": [
+    {
+      "score": 5,
+      "endpoint": "POST /terminal/cc/cloudPc/heartbeat/v2",
+      "apiPath": "/cc/cloudPc/heartbeat/v2",
+      "count": 2,
+      "statusSamples": [
+        "200"
+      ],
+      "reasons": [
+        "keyword:heartbeat",
+        "family source heartbeat route"
+      ],
+      "classification": {
+        "class": "official_connected_http_timer",
+        "desktopKeepaliveEvidence": "unproven_timer_only",
+        "risk": "accepted response is not sleep-prevention proof; watch 4043 and powered state"
+      },
+      "timing": {
+        "first": "2026-06-30T11:20:16.280000+00:00",
+        "last": "2026-06-30T11:20:47.942000+00:00",
+        "durationSeconds": 31,
+        "medianIntervalSeconds": 31.662,
+        "minIntervalSeconds": 31.662,
+        "maxIntervalSeconds": 31.662
+      },
+      "requestBody": {
+        "json": true,
+        "encryptedBodyDetected": true,
+        "keys": [
+          "data"
+        ],
+        "replayableJson": false
+      },
+      "responseBody": {
+        "json": true,
+        "encryptedBodyDetected": false,
+        "keys": [
+          "businessCode",
+          "code",
+          "errMsg",
+          "msg"
+        ],
+        "replayableJson": true
+      },
+      "replayCommand": "# HAR body is app-layer encrypted; recover logical JSON first, then: python3 bin/cmcc_cloud_alive.py api-probe /cc/cloudPc/heartbeat/v2 --json '<json>'",
+      "sourceCorrelation": null,
+      "source": "/home/demo/下载/terminalprobe.soho.komect.com_2026_06_30_19_22_00.har",
+      "sample": null
+    }
+  ],
+  "decodedPayloadFindings": {
+    "decodedPayloads": 0,
+    "skippedFiles": [],
+    "classCounts": {},
+    "matchedTerms": {},
+    "enterpriseStyleKeepaliveReferences": [],
+    "findings": [],
+    "conclusion": "no decoded JSON payloads were found in JSONL inputs"
+  },
+  "binaryCaptureFindings": {
+    "inputFiles": [],
+    "visibleHosts": {},
+    "visibleIpPorts": {},
+    "visibleUrls": [],
+    "visiblePaths": [],
+    "httpRequestLines": [],
+    "matchedKeepaliveTerms": {},
+    "tshark": {
+      "available": true,
+      "tool": "/usr/bin/tshark",
+      "inputFiles": [],
+      "errors": [],
+      "conversationCount": 0,
+      "topConversations": [],
+      "topRemotePorts": {},
+      "tlsServerNames": {},
+      "httpHosts": {},
+      "httpRequestUris": {},
+      "dnsQueries": {},
+      "conclusion": "no pcap input"
+    },
+    "transportSignals": {
+      "sohoHostVisible": false,
+      "cag8899Visible": false,
+      "mqtt8883Visible": false,
+      "loopbackVisible": false,
+      "opentelemetryVisible": false,
+      "spiceOrSdkSuccessVisible": false
+    },
+    "conclusion": "no binary captures supplied"
+  },
+  "officialTimerMatrix": [
+    {
+      "endpoint": "POST /terminal/cc/cloudPc/heartbeat/v2",
+      "apiPath": "/cc/cloudPc/heartbeat/v2",
+      "count": 2,
+      "classification": {
+        "class": "official_connected_http_timer",
+        "desktopKeepaliveEvidence": "unproven_timer_only",
+        "risk": "accepted response is not sleep-prevention proof; watch 4043 and powered state"
+      },
+      "timing": {
+        "first": "2026-06-30T11:20:16.280000+00:00",
+        "last": "2026-06-30T11:20:47.942000+00:00",
+        "durationSeconds": 31,
+        "medianIntervalSeconds": 31.662,
+        "minIntervalSeconds": 31.662,
+        "maxIntervalSeconds": 31.662
+      }
+    },
+    {
+      "endpoint": "POST /terminal/cc/cloudPc/infoReport/v2",
+      "apiPath": "/cc/cloudPc/infoReport/v2",
+      "count": 1,
+      "classification": {
+        "class": "official_connected_http_timer",
+        "desktopKeepaliveEvidence": "unproven_timer_only",
+        "risk": "accepted response is not sleep-prevention proof; watch 4043 and powered state"
+      },
+      "timing": {
+        "first": "2026-06-30T11:20:21.962000+00:00",
+        "last": "2026-06-30T11:20:21.962000+00:00",
+        "durationSeconds": 0,
+        "medianIntervalSeconds": null,
+        "minIntervalSeconds": null,
+        "maxIntervalSeconds": null
+      }
+    }
+  ],
+  "sessionOwningFallbackCandidates": [],
+  "excludedByClass": {
+    "inventory_status_or_config": 7,
+    "terminalprobe_telemetry": 3,
+    "official_connected_http_timer": 2,
+    "analytics_point": 1,
+    "proxy_tunnel_noise": 1
+  },
+  "enterpriseBlogEndpoints": {
+    "present": [],
+    "absent": [
+      "/resource/desktopUptime",
+      "/session/machineConnect",
+      "/machine/pushConnectEventData"
+    ]
+  },
+  "visibleConnectedTimers": [
+    "/cc/cloudPc/heartbeat/v2",
+    "/cc/cloudPc/infoReport/v2"
+  ],
+  "httpOnlyKeepaliveEvidence": {
+    "verdict": "visible_connected_timers_only_unproven",
+    "reason": "The capture shows official connected-client HTTP timers, but no independent desktop uptime/session endpoint.",
+    "successSignal": "Only a long http-session-verify run can set desktopKeepaliveProven=true.",
+    "pureHttpDesktopEndpointFound": false,
+    "visibleTimersOnly": true,
+    "sessionOwningFallbackFound": false,
+    "requiredProof": [
+      "family runtime capture endpoint",
+      "pure Python replay accepted by service",
+      "no 4043 other-login/session replacement",
+      "cloud desktop remains running past idle shutdown window"
+    ]
+  },
+  "verdict": "visible_connected_timers_only_unproven",
+  "nextStep": "Run http-session-verify against the visible official timers only as an experiment; do not treat accepted responses as success."
+}

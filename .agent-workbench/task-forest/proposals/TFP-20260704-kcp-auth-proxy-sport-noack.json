@@ -1,0 +1,105 @@
+{
+  "applied_at": "2026-07-04T02:28:35.554339Z",
+  "base_graph_hash": "6dd40084358f95c33bb85f7c136aaf9c090bab8a8ddb0f071c30265d76013090",
+  "base_summary": {
+    "edge_count": 54,
+    "node_count": 44,
+    "workspace_path": "/home/demo/restore/cmcc-cloud-alive"
+  },
+  "changes": [
+    {
+      "action": "add_node",
+      "alias": "kcp-auth-proxy-sport-fix",
+      "node": {
+        "acceptance_criteria": [
+          "connect_info_from_connect_str 实现 proxy-sport -> proxy-port -> p 的 RAP 端口优先级",
+          "rap_zime CAG material wrapper 默认合并 udpSsl 到 SYN capability",
+          "live 报告记录 udpPortSource=proxy-sport 且 AUTH_HEAD 仍无 ACK",
+          "全量 Python 测试通过"
+        ],
+        "confidence": 0.9,
+        "context_tags": [
+          "cmcc-cloud-alive",
+          "KCP",
+          "RAP",
+          "IDA",
+          "UDP"
+        ],
+        "difficulty": "medium",
+        "evidence": [
+          "IDA report：split_spice_init_udp_info(proxy_type,p,tmp_port,proxy_port,proxy_sport)",
+          "reports/kcp-auth-from-cag-live-proxy-sport-20260704.json：udpPortSource=proxy-sport、udpSsl=true、AUTH_HEAD responses=0",
+          "cmcc_cloud_alive/protocol_runner.py：UDP port selection",
+          "cmcc_cloud_alive/rap_zime.py：udpSsl 合并与 report fields",
+          "docs/delivery-handoff.md 第 51 节",
+          "python3 -m unittest discover -s tests -p 'test_python_*.py' -v：96 tests OK"
+        ],
+        "kind": "subtask",
+        "priority": 1,
+        "progress": 100,
+        "progress_source": "implemented_tested_live_noack",
+        "requirements": [
+          "报告只记录 udpPortSource/udpSsl/gatewayPortPresent 等脱敏摘要，不输出实际 CAG target 或 secret",
+          "不得把 proxy-sport 修正后的 no-ACK 当作 display path 或保活成功",
+          "后续需继续排查 auth_type/type102、link_type/OTEL 或 session/source-port 绑定"
+        ],
+        "status": "done",
+        "summary": "从 IDA 报告确认官方 split_spice_init_udp_info 在 RAP 模式下优先使用 proxy-sport，其次 proxy-port，最后 p；connect_info_from_connect_str 已按该逻辑选择 UDP target port，并记录 gatewayPort、udpPortSource、udpSsl。live 复测显示 udpPortSource=proxy-sport、udpSsl=true，但 AUTH_HEAD 仍无 ACK。",
+        "title": "按 IDA 证据修正 RAP UDP target 端口选择"
+      }
+    },
+    {
+      "action": "add_edge",
+      "edge": {
+        "confidence": 0.9,
+        "reason": "UDP target 端口选择是 AUTH_HEAD live 短测 no-ACK 的关键排查分支。"
+      },
+      "from": "kcp-auth-proxy-sport-fix",
+      "to": "TF-0041",
+      "type": "child_of"
+    },
+    {
+      "action": "update_node",
+      "fields": {
+        "evidence": [
+          "reports/kcp-auth-from-cag-live-proxy-sport-20260704.json：proxy-sport/udpSsl 修正后仍 AUTH_HEAD 无 ACK",
+          "docs/delivery-handoff.md 第 51 节",
+          "python3 -m unittest discover -s tests -p 'test_python_*.py' -v：96 tests OK"
+        ],
+        "progress": 42,
+        "progress_source": "proxy_sport_fixed_live_auth_head_still_noack",
+        "status": "in_progress",
+        "summary": "真实 AUTH/SYNACK 短测继续推进：已按 IDA 证据修正 RAP UDP target 端口选择为 proxy-sport 优先，并默认启用 udpSsl；live 复测确认 udpPortSource=proxy-sport、destFromVmArgs=true，但 AUTH_HEAD 仍无 ACK。下一步应复核 auth_type/type102、link_type/OTEL、官方额外初始化或 source-port/session 绑定。"
+      },
+      "id": "TF-0041"
+    },
+    {
+      "action": "update_node",
+      "fields": {
+        "evidence": [
+          "reports/kcp-auth-from-cag-live-vm-dest-normalized-20260704.json：VM dest 修正后无 ACK",
+          "reports/kcp-auth-from-cag-live-proxy-sport-20260704.json：proxy-sport 修正后无 ACK",
+          "docs/delivery-handoff.md 第 51 节"
+        ],
+        "progress": 35,
+        "progress_source": "proxy_sport_branch_fixed_but_noack_persists",
+        "summary": "AUTH_HEAD 无 ACK 风险仍在。已修正并复测 RAP UDP target 端口选择，确认 proxy-sport/udpSsl 路径仍无 ACK；剩余更可能是 auth_type/type102、link_type/OTEL、官方额外初始化或 source-port/session 绑定。"
+      },
+      "id": "TF-0044"
+    },
+    {
+      "action": "update_node",
+      "fields": {
+        "progress": 89,
+        "progress_source": "proxy_sport_fixed_live_auth_head_still_noack",
+        "summary": "fresh KCP SYNACK 前置握手仍未完成：本地 codec/状态机/CLI、VM dest 映射、RAP proxy-sport 端口选择和 udpSsl 默认均已具备并 live 复测；当前仍卡在 AUTH_HEAD 无 ACK，未进入 AUTH_DATA/SYN/SYNACK。"
+      },
+      "id": "TF-0029"
+    }
+  ],
+  "created_at": "2026-07-04T02:28:35.309712Z",
+  "proposal_id": "TFP-20260704-kcp-auth-proxy-sport-noack",
+  "rationale": "根据 IDA split_spice_init_udp_info 证据修正 RAP UDP target 端口选择：proxy-sport 优先于 p，并同步 udpSsl 默认；live 复测仍无 AUTH_HEAD_ACK，因此 no-ACK 风险继续存在，但已排除端口选择错误作为唯一原因。",
+  "session_id": "session-20260704-kcp-auth-proxy-sport-noack",
+  "status": "applied"
+}

@@ -1,0 +1,106 @@
+{
+  "proposal_id": "TFP-20260704-link-flag-source-chain",
+  "session_id": "session-20260704-link-flag-source-chain",
+  "rationale": "继续推进 TF-0051：扩大到 runner 代码、测试、符号表、DWARF 名称和新 IDA 定向提取，确认 data_buf[224] 的来源链路。结论是 link flag 来自 local proxy protocol header / proxy fd session link-type negotiation，并由 proxy_sock 传播到 udp_sock 后被 deal_udt_using_cag* 消费。该结果推进了 AUTH_HEAD no-ACK 的静态排查，但仍未拿到 AUTH_HEAD_ACK/SYNACK/display path。",
+  "status": "proposed",
+  "changes": [
+    {
+      "action": "add_node",
+      "alias": "link-flag-source-chain",
+      "node": {
+        "title": "定位 data_buf[224] link flag 来源链路",
+        "kind": "subtask",
+        "status": "done",
+        "summary": "通过新增 IDA 定向提取和全函数伪代码语义扫描，确认 data_buf[224] 的来源链路：deal_unlinked_unknown_local_data 根据本地 proxy protocol header 设置 1/2；deal_local_link_proxy_create 映射到 proxy fd type；deal_create_proxy_fd_session 写 proxy_sock->data_buf[224]；init_local_rw_sock_pair_udp 再复制到 udp_sock->data_buf[224]，供 deal_udt_using_cag* 选择 link_type=11/140。runner report 已固化该脱敏 evidence 和未模拟缺口。",
+        "requirements": [
+          "不读取或输出 token、connectStr、accessToken、cpsid、密码、JWT、VM IP、CAG target 或 authBuffer 明文",
+          "不操作 GUI 或 CrossDesk",
+          "不得把静态链路定位当成 AUTH_HEAD_ACK/SYNACK/display path 成功",
+          "未拿到 SYNACK 前不得创建 ZIME channel 或发送 DISPLAY_INIT"
+        ],
+        "acceptance_criteria": [
+          "生成 reports/ida-libspice-zime-link-flag-source-20260704.json",
+          "生成 reports/ida-libspice-zime-link-flag-source-directed-20260704.json",
+          "生成 reports/ida-libspice-zime-link-flag-source-directed-20260704-snippets.txt",
+          "rap_zime.py 的 UDP session evidence/parity assessment 记录 local proxy header 与 proxy_sock link-type propagation 缺口",
+          "聚焦测试、compileall 和全量 Python 单元测试通过",
+          "docs/delivery-handoff.md 更新第 62 节"
+        ],
+        "progress": 100,
+        "progress_source": "ida_link_flag_source_chain_recovered_tests_passed",
+        "priority": 1,
+        "difficulty": "medium",
+        "remaining_minutes_min": 0,
+        "remaining_minutes_max": 0,
+        "confidence": 0.9,
+        "context_tags": [
+          "cmcc-cloud-alive",
+          "KCP",
+          "CAG",
+          "AUTH_HEAD",
+          "IDA",
+          "link_type",
+          "IceSocket"
+        ],
+        "evidence": [
+          "reports/ida-libspice-zime-link-flag-source-directed-20260704-snippets.txt：deal_unlinked_unknown_local_data / deal_create_proxy_fd_session / init_local_rw_sock_pair_udp",
+          "cmcc_cloud_alive/rap_zime.py：kcp_udp_session_lifecycle_ida_evidence 与 _kcp_auth_probe_parity_assessment 新增 link flag 前置链路",
+          "tests/test_python_modules.py：test_rap_zime_kcp_auth_sync_probe_runs_auth_then_syn 新增断言",
+          "docs/delivery-handoff.md 第 62 节",
+          "python3 -m compileall -q cmcc_cloud_alive tests scripts/ida_extract_spice_zime.py：OK",
+          "python3 -m unittest discover -s tests -p 'test_python_*.py' -v：Ran 101 tests OK"
+        ]
+      }
+    },
+    {
+      "action": "add_edge",
+      "from": "link-flag-source-chain",
+      "to": "TF-0051",
+      "type": "child_of",
+      "edge": {
+        "reason": "该子任务定位了 AUTH_HEAD 前官方 CAG/session 绑定路径中的 sock link flag 来源，是 TF-0051 的核心静态证据缺口。",
+        "confidence": 0.9
+      }
+    },
+    {
+      "action": "update_node",
+      "id": "TF-0051",
+      "fields": {
+        "status": "in_progress",
+        "progress": 68,
+        "progress_source": "link_flag_source_chain_recovered_but_proxy_header_not_replayed",
+        "summary": "确认 AUTH_HEAD 前官方 CAG/session 绑定行为的工作继续收敛：已定位 data_buf[224] 来源链路，官方路径先由 local proxy protocol header/link-type negotiation 写 proxy_sock->data_buf[224]，再复制到 udp_sock->data_buf[224] 供 deal_udt_using_cag* 决定 link_type。剩余缺口是恢复或观测最小 local proxy header/outband 前置包，或抓 fresh official trace 证明 AUTH_HEAD 前的实际包序。"
+      }
+    },
+    {
+      "action": "update_node",
+      "id": "TF-0044",
+      "fields": {
+        "status": "in_progress",
+        "progress": 94,
+        "progress_source": "auth_head_noack_link_flag_source_recovered",
+        "summary": "AUTH_HEAD 无 ACK 风险进一步收敛：已排除多条 auth buffer 和 source-port 盲测路线，并定位 link flag 来自前置 local proxy header/proxy fd session，而非 auth buffer builder。后续不应把 link_type=140 当作单纯 CLI 组合盲测，必须先恢复或观测前置 proxy/session 绑定语义。"
+      }
+    },
+    {
+      "action": "update_node",
+      "id": "TF-0001",
+      "fields": {
+        "status": "in_progress",
+        "progress": 73.5,
+        "progress_source": "link_flag_source_chain_recovered_display_path_not_reached",
+        "summary": "协议 runner 仍未到达 AUTH_HEAD_ACK/SYNACK/ZIME channel/DISPLAY_INIT/40 分钟 verified-run；本轮定位了 data_buf[224] link flag 来源链路，并把 local proxy header/proxy fd session 缺口固化进 runner report。下一步应恢复最小前置 proxy/outband header 或抓 fresh official trace，而不是继续 auth buffer link_type 盲测。"
+      }
+    },
+    {
+      "action": "update_node",
+      "id": "TF-0010",
+      "fields": {
+        "status": "in_progress",
+        "progress": 100,
+        "progress_source": "handoff_updated_for_link_flag_source_chain",
+        "summary": "交接文档已更新到第 62 节，记录 data_buf[224] 来源链路、IDA 定向报告、runner evidence 更新、101 个 Python 测试通过结果，以及仍未达到 AUTH_HEAD_ACK/SYNACK/display path/verified-run 的事实。"
+      }
+    }
+  ]
+}

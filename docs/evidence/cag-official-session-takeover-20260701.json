@@ -1,0 +1,65 @@
+{
+  "date": "2026-07-01",
+  "target": {
+    "product": "China Mobile family cloud PC",
+    "skuName": "家庭云电脑畅享版月包",
+    "userServiceId": "2663816",
+    "spuCode": "zte-cloud-pc"
+  },
+  "purpose": "Check whether CAG HTTPS connect-material refresh is a non-kicking HTTP keepalive or a session-owning fallback.",
+  "procedure": [
+    "Opened the official Linux family cloud PC client.",
+    "Clicked Connect on the ordinary family cloud PC card.",
+    "Confirmed uSmartView_VDI_Client was running and full-screen desktop windows existed.",
+    "Ran python3 bin/cmcc_cloud_alive.py cag-keepalive-once 2663816.",
+    "Waited about 40 seconds and observed official client state again."
+  ],
+  "cagKeepaliveOnce": {
+    "accepted": true,
+    "businessOk": true,
+    "connectStr": true,
+    "vmStatusShow": "运行中",
+    "rap": {
+      "host": "10.10.2.126",
+      "port": 10090,
+      "type": "rap",
+      "serverType": "hy",
+      "accessTokenPresent": true,
+      "cpsidPresent": true
+    }
+  },
+  "beforeCag": {
+    "processSignals": {
+      "cmccJtydnPresent": true,
+      "bootCypcPresent": true,
+      "uSmartViewVdiClientPresent": true
+    },
+    "windowSignals": {
+      "mainClientWindowPresent": true,
+      "fullScreenDesktopWindowPresent": true,
+      "fullScreenDesktopWindowTitle": "移动云电脑 657****444aff86f"
+    }
+  },
+  "afterCagAbout40Seconds": {
+    "processSignals": {
+      "cmccJtydnPresent": true,
+      "bootCypcPresent": true,
+      "uSmartViewVdiClientPresent": false
+    },
+    "windowSignals": {
+      "mainClientWindowPresent": true,
+      "fullScreenDesktopWindowPresent": false,
+      "clientDialog": "该云电脑已在其他设备上登录(A90020124)"
+    },
+    "cloudStatus": {
+      "vmStatus": 1,
+      "vmStatusShow": "运行中"
+    }
+  },
+  "verdict": {
+    "cagHttpsCanKeepVmRunning": true,
+    "nonKickingPureHttpDesktopKeepalive": false,
+    "sessionOwningFallback": true,
+    "takeoverSignal": "Desktop session process/window disappeared while the official client shell stayed alive and showed A90020124."
+  }
+}

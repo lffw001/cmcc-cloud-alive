@@ -1,0 +1,45 @@
+{
+  "applied_at": "2026-07-04T09:46:31.371464Z",
+  "base_graph_hash": "be16cf9d5d04cce4dc050d6a5393da796727054a93ea094abd7c6f049bb40dbb",
+  "base_summary": {
+    "edge_count": 62,
+    "node_count": 52,
+    "workspace_path": "/home/demo/restore/cmcc-cloud-alive"
+  },
+  "changes": [
+    {
+      "action": "update_node",
+      "fields": {
+        "evidence": [
+          "reports/ida-libspice-zime-auth-source-20260704.json：deal_udt_using_cag/deal_udt_using_cag_uac 目标选择伪代码",
+          "cmcc_cloud_alive/rap_zime.py：新增 _cag_material_destination 并更新 type101/type102 material builder",
+          "tests/test_python_modules.py：test_rap_zime_cag_type101_material_uses_link_type_destination_rules",
+          "docs/delivery-handoff.md 第 59 节：补充全量验证",
+          "python3 -m unittest 相关 5 个聚焦测试：OK",
+          "python3 -m compileall -q cmcc_cloud_alive tests scripts/ida_extract_spice_zime.py：OK",
+          "python3 -m unittest discover -s tests -p 'test_python_*.py' -v：Ran 100 tests OK"
+        ],
+        "progress": 100,
+        "progress_source": "implemented_full_python_tests_passed",
+        "status": "done",
+        "summary": "CAG auth buffer 目标选择已按 IDA link_type 规则修正，并完成聚焦测试、compileall 与全量 Python 单元测试。该修正对齐 builder，不代表 live AUTH_HEAD_ACK/SYNACK/display path 已成功。"
+      },
+      "id": "TF-0052"
+    },
+    {
+      "action": "update_node",
+      "fields": {
+        "progress": 100,
+        "progress_source": "handoff_updated_with_cag_auth_destination_full_verify",
+        "status": "in_progress",
+        "summary": "交接文档已更新到第 59 节，并补充 CAG auth destination/link_type 修正后的 compileall 与 100 个 Python 单元测试通过结果。"
+      },
+      "id": "TF-0010"
+    }
+  ],
+  "created_at": "2026-07-04T09:46:31.166151Z",
+  "proposal_id": "TFP-20260704-cag-auth-destination-full-verify",
+  "rationale": "CAG auth buffer 目标选择按 link_type 修正后，完成 compileall 与全量 Python 单元测试，并把完整验证结果补入 docs/delivery-handoff.md 第 59 节；同步 task-forest 以记录该修正已经过全量验证。",
+  "session_id": "session-20260704-cag-auth-destination-full-verify",
+  "status": "applied"
+}

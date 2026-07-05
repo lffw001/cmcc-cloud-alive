@@ -1,0 +1,71 @@
+{
+  "proposal_id": "TFP-20260704-kcp-auth-live-synack-next",
+  "session_id": "session-20260704-kcp-auth-type101-builder",
+  "rationale": "应用 type101 builder proposal 后，TF-0029 的直接子任务均为 done，HTML/派生视图可能把 fresh SYNACK 前置握手误读为 100%。本 proposal 补充未完成的 live AUTH/SYNACK 子任务，并将 TF-0029 保持 in_progress，避免后续 agent 空转或误判已完成。",
+  "status": "proposed",
+  "changes": [
+    {
+      "action": "add_node",
+      "alias": "kcp-auth-live-synack",
+      "node": {
+        "title": "用 fresh type101 auth buffer 执行真实 AUTH/SYNACK 短测",
+        "kind": "subtask",
+        "status": "ready",
+        "summary": "下一步使用当前有效 CAG/session 字段生成 in-memory type101 authBuffer，调用 run_kcp_auth_sync_probe 到真实 UDP endpoint，只验证 AUTH_HEAD_ACK、AUTH_ACK 和 SYNACK。该短测 session-owning，可能顶掉官方客户端；不直接创建 ZIME channel，不声称 display path 成功。",
+        "requirements": [
+          "必须使用当前有效 CAG/session 字段生成 fresh authBuffer，不能 replay 旧 trace payload",
+          "报告不得保存 authBuffer、username、password、vmid、dest_ip、dest_port、token 或 connectStr 明文",
+          "短测目标只到 AUTH_HEAD_ACK/AUTH_ACK/SYNACK",
+          "未拿到 SYNACK 前不得创建 ZIME channel、stream 或发送 DISPLAY_INIT",
+          "任何 GUI 点击前必须截图确认并使用窗口内坐标，不操作 CrossDesk"
+        ],
+        "acceptance_criteria": [
+          "live 报告观察到 AUTH_HEAD_ACK(cmd=7)",
+          "live 报告观察到 AUTH_ACK(cmd=9)",
+          "live 报告观察到 SYNACK，并输出 conv/use_quic/stream/FEC/headLen 脱敏协商摘要",
+          "报告声明 desktopKeepaliveProven=false、displayPathObserved=false、verifiedRunPassed=false",
+          "失败时记录缺口是 fresh 字段、网络 endpoint、auth_type 分支还是 ACK/SYNACK 超时"
+        ],
+        "progress": 0,
+        "progress_source": "next_live_step_not_started",
+        "priority": 1,
+        "difficulty": "high",
+        "remaining_minutes_min": 60,
+        "remaining_minutes_max": 240,
+        "confidence": 0.72,
+        "context_tags": [
+          "cmcc-cloud-alive",
+          "KCP",
+          "auth",
+          "SYNACK",
+          "live-short-test"
+        ],
+        "evidence": [
+          "reports/kcp-auth-type101-builder-20260704.json：type101 builder 已具备但仅为静态/本地证据",
+          "cmcc_cloud_alive/rap_zime.py：run_kcp_auth_sync_probe 已具备 AUTH_HEAD/AUTH_DATA/SYN 顺序状态机",
+          "docs/delivery-handoff.md 第 48 节明确下一步是 live AUTH/SYNACK"
+        ]
+      }
+    },
+    {
+      "action": "add_edge",
+      "from": "kcp-auth-live-synack",
+      "to": "TF-0029",
+      "type": "child_of",
+      "edge": {
+        "reason": "真实 AUTH/SYNACK 是 fresh KCP SYNACK 接入 native bridge 前置握手尚未完成的 live 子任务。",
+        "confidence": 0.9
+      }
+    },
+    {
+      "action": "update_node",
+      "id": "TF-0029",
+      "fields": {
+        "status": "in_progress",
+        "progress": 78,
+        "progress_source": "type101_builder_done_live_auth_synack_child_pending",
+        "summary": "fresh KCP SYNACK 前置握手仍未完成：本地已具备 auth-ready gate、ZTEC auth buffer split、AUTH ACK 后再 SYN 状态机和 CAG type101 auth buffer builder；但真实 AUTH_HEAD_ACK/AUTH_ACK/SYNACK 尚未跑通。已新增 live AUTH/SYNACK 子任务，避免派生视图误判该节点 100%。"
+      }
+    }
+  ]
+}

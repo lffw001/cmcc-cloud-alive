@@ -1,0 +1,131 @@
+{
+  "applied_at": "2026-07-03T23:06:16.114436Z",
+  "base_graph_hash": "951134d5376e0294fef6a697d7c3b1472254aea3082feb65699d49c452fb0472",
+  "base_summary": {
+    "edge_count": 38,
+    "node_count": 30,
+    "workspace_path": "/home/demo/restore/cmcc-cloud-alive"
+  },
+  "changes": [
+    {
+      "action": "add_node",
+      "alias": "kcp-syn-len-mtu-fix",
+      "node": {
+        "acceptance_criteria": [
+          "build_kcp_client_syn_segment 生成的 decoded.len 为 1400",
+          "fresh SYN payloadLengthMatches=false 但 classify_payload 仍识别为 kcp-client-syn",
+          "run_kcp_sync_probe 报告 clientSyn.len=1400 且 bytesSent=21",
+          "全量 Python 测试通过"
+        ],
+        "confidence": 0.92,
+        "context_tags": [
+          "cmcc-cloud-alive",
+          "KCP",
+          "SYN",
+          "IDA"
+        ],
+        "difficulty": "medium",
+        "evidence": [
+          "reports/ida-libspice-zime-analysis-20260704-rerun.json：ikcp_send_link_sync 伪代码显示 seg.len=kcp->mtu 且 data_len=21",
+          "cmcc_cloud_alive/rap_zime.py：encode_kcp_segment 新增 declared_len，build_kcp_client_syn_segment 使用 declared_len=mtu",
+          "tests/test_python_modules.py：client SYN 和本地 sync probe 测试更新为 len=1400",
+          "reports/kcp-sync-probe-pcap-metadata-lenmtu-20260704.json：bytesSent=21、clientSyn.len=1400、synackReceived=false",
+          "python3 -m unittest discover -s tests -p 'test_python_*.py' -v：86 tests OK"
+        ],
+        "kind": "subtask",
+        "priority": 1,
+        "progress": 100,
+        "progress_source": "implemented_ida_len_mtu_fix_short_probe_and_tests",
+        "remaining_minutes_max": 0,
+        "remaining_minutes_min": 0,
+        "requirements": [
+          "header len 字段必须按 IDA 写入 MTU，不再等于实际 payload 长度 0",
+          "fresh client SYN wire size 仍为 21 字节",
+          "报告继续标注 desktopKeepaliveProven=false、displayPathObserved=false、verifiedRunPassed=false",
+          "旧 metadata target 无 SYNACK 不能当作最终结论"
+        ],
+        "status": "done",
+        "summary": "IDA 显示 ikcp_send_link_sync 写入 seg.len=kcp->mtu，但 fresh SYN 实际只发送 21 字节 header。已将 Python 编码从 len=0 修正为 declared_len=mtu，同时保持 bytesSent=21，并让 classifier 接受这种官方 SYN header 形态。",
+        "title": "修正 KCP client SYN header len 为 MTU"
+      }
+    },
+    {
+      "action": "add_edge",
+      "edge": {
+        "confidence": 0.9,
+        "reason": "这是 KCP client SYN 编码实现中的 IDA 对齐纠偏。"
+      },
+      "from": "kcp-syn-len-mtu-fix",
+      "to": "TF-0028",
+      "type": "child_of"
+    },
+    {
+      "action": "update_node",
+      "fields": {
+        "evidence": [
+          "scripts/ida_extract_spice_zime.py 新增 client SYN 和 UDP/KCP 初始化相关目标函数",
+          "reports/ida-libspice-zime-analysis-20260704-rerun.json：ikcp_send_link_sync 显示 seg.len=kcp->mtu、data_len=21",
+          "cmcc_cloud_alive/rap_zime.py：KCP client SYN 编码、SYN/SYNACK 分类和 sync probe；declared_len=mtu 修正已落地",
+          "reports/kcp-sync-probe-pcap-metadata-lenmtu-20260704.json：旧 target 短测 bytesSent=21、clientSyn.len=1400、synackReceived=false",
+          "python3 -m unittest discover -s tests -p 'test_python_*.py' -v：86 tests OK"
+        ],
+        "progress": 100,
+        "progress_source": "client_syn_declared_len_mtu_corrected_and_tests_pass",
+        "summary": "已从 IDA 恢复 ikcp_send_link_sync 并实现 client SYN/sync probe；本轮修正 header len 字段：fresh SYN wire 仍发送 21 字节，但 header len 必须声明为 kcp->mtu，而不是 payload 长度 0。旧 pcap metadata target 在修正后仍无 SYNACK。"
+      },
+      "id": "TF-0028"
+    },
+    {
+      "action": "update_node",
+      "fields": {
+        "evidence": [
+          "reports/kcp-sync-probe-pcap-metadata-lenmtu-20260704.json：bytesSent=21、clientSyn.len=1400、synackReceived=false",
+          "reports/ida-libspice-zime-analysis-20260704-rerun.json：deal_kcp_sync_ack_cmd 在 SYNACK 后才调用 QUIC_create_data_channel",
+          "reports/ida-libZIMEDataEngine-analysis-20260704.json：CreateStream 在 QUIC connection 未创建时失败",
+          "docs/delivery-handoff.md 第 39 节记录 client SYN len 纠偏和剩余缺口"
+        ],
+        "progress": 20,
+        "progress_source": "client_syn_len_mtu_fixed_but_synack_still_missing",
+        "summary": "旧 no-probe pcap metadata target 对修正后的 client SYN 仍无响应；当前已排除一个本地编码偏差：fresh SYN wire 21 字节但 header len=MTU。下一步仍需要 fresh 官方轨迹/会话上下文，或继续恢复 syn_id、conv、auth、socket/session 绑定参数，直到服务端返回 SYNACK。"
+      },
+      "id": "TF-0029"
+    },
+    {
+      "action": "update_node",
+      "fields": {
+        "evidence": [
+          "cmcc_cloud_alive/zime_native_bridge.py",
+          "cmcc_cloud_alive/rap_zime.py：KCP client SYN 编码和 run_kcp_sync_probe；clientSyn.len=mtu 修正已落地",
+          "reports/kcp-sync-probe-pcap-metadata-lenmtu-20260704.json：client SYN 已发出但 synackReceived=false",
+          "reports/ida-libspice-zime-analysis-20260704-rerun.json：ZIME_CreateDataChannel 参数来自 KCP/SYNACK 后状态",
+          "reports/ida-libZIMEDataEngine-analysis-20260704.json：CreateDataChannel/CreateStream gate 已确认",
+          "python3 -m unittest discover -s tests -p 'test_python_*.py' -v：86 tests OK"
+        ],
+        "progress": 79,
+        "progress_source": "client_syn_declared_len_mtu_fixed_synack_still_pending"
+      },
+      "id": "TF-0003"
+    },
+    {
+      "action": "update_node",
+      "fields": {
+        "evidence": [
+          "docs/delivery-handoff.md 第 36 节：KCP sync/SYNACK 前置协商字段已恢复",
+          "docs/delivery-handoff.md 第 37 节：client SYN 构造和 KCP sync probe 已落地",
+          "docs/delivery-handoff.md 第 38 节：IDA 复核 ZIME channel/stream 创建门槛",
+          "docs/delivery-handoff.md 第 39 节：修正 client SYN header len 字段",
+          "reports/kcp-sync-probe-pcap-metadata-lenmtu-20260704.json：修正后旧 metadata target 仍未返回 SYNACK",
+          "python3 -m unittest discover -s tests -p 'test_python_*.py' -v：86 tests OK"
+        ],
+        "progress": 74,
+        "progress_source": "kcp_client_syn_len_mtu_fixed_but_fresh_synack_missing"
+      },
+      "id": "TF-0001"
+    }
+  ],
+  "created_at": "2026-07-03T23:06:15.888324Z",
+  "proposal_id": "TFP-20260704-kcp-syn-len-mtu-fix",
+  "rationale": "继续推进 fresh SYNACK 路线时复核 IDA 证据，发现 Python client SYN 编码把 header len 写成 payload 长度 0；IDA 的 ikcp_send_link_sync 明确是 seg.len=kcp->mtu，但实际发送 data_len=21。已修正为声明 len=mtu、wire 仍 21 字节，并完成短测与全量测试。",
+  "session_id": "session-20260704-kcp-syn-len-mtu-fix",
+  "status": "applied"
+}
