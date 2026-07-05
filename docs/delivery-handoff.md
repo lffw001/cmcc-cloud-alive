@@ -1,226 +1,25 @@
 # cmcc-cloud-alive 交付与接手文档
 
-更新时间：2026-07-04 15:04 Asia/Shanghai
-
-本文档用于把当前 `cmcc-cloud-alive` 项目交给后续 agent 继续开发。它不是最终用户 README，而是工程交接文档，重点说明当前做到哪里、哪些路线已经被证伪、哪些证据可信、下一步应该怎么继续。
+> 最后更新：2026-07-05
+> 项目根：`/home/demo/restore/cmcc-cloud-alive`
+> 蓝本(只读)：`/home/demo/cloud-computer-keepalive`（Go 成品）
+> 测试：258 tests，全绿
 
 ## 1. 项目定位
 
-项目名：`cmcc-cloud-alive`
+目标：为移动云电脑（家庭版畅享版月包，`spuCode=zte-cloud-pc`）实现协议级桌面保活，使云电脑在空闲窗口后不自动关机。
 
-本地路径：
+项目根路径（实际）：
 
-```bash
-/home/demo/cmcc-cloud-alive
-```
-
-当前实际路径是符号链接目标：
-
-```bash
+```text
 /home/demo/restore/cmcc-cloud-alive
 ```
 
-目标：实现中国移动云电脑家庭版/普通云电脑的协议级桌面保活。
+> 注意：旧文档曾使用 `/home/demo/cmcc-cloud-alive`，该路径已废弃，统一以 `/home/demo/restore/cmcc-cloud-alive` 为准。
 
-当前主线已经收敛为：
+凭据通过环境变量 / state 文件传入，文档中不展开明文。
 
-```text
-SOHO 登录/列表/状态
-  -> CAG boot/connect material
-  -> RAP/ZIME transport
-  -> SPICE main/display channel
-  -> DISPLAY_INIT
-  -> ACK/PONG maintenance
-  -> 独立每分钟电源状态验证
-```
-
-关键点：
-
-- 本项目目标是家庭版/普通云电脑，不是政企版。
-- Docker 版本已放弃，不要回头维护 Docker。
-- 纯 HTTP 桌面保活已放弃。
-- CAG HTTPS 保活已放弃，只保留为开机和获取连接材料的研究入口。
-- 现在要做的是 Linux 家庭版客户端路线里的 native 协议复现，重点是 RAP/ZIME/SPICE。
-
-## 2. 当前结论
-
-当前结论分三层：
-
-1. SOHO HTTP 登录、列表、状态、账号保活等基础能力已经可用。
-2. CAG HTTPS 能拉起云电脑并返回连接材料，但不能作为桌面保活结论。
-3. 官方 Linux 客户端的动态 trace 中已经观察到 SPICE display path、`DISPLAY_INIT`、Surface/Draw/MARK、ACK/PONG 等协议活动，但还没有实现独立 Python 协议 runner。
-
-严禁把以下信号当成“保活成功”：
-
-```text
-HTTP heartbeat 返回 2000/4041
-infoReport 返回 2000
-logConfig 返回 2000
-CAG 返回 connectStr
-CAG 后 status 短暂变成运行中
-spice-offline-proof 通过
-官方客户端 3 分钟 trace 里看到 SPICE 活动
-```
-
-真正的成功信号必须同时满足：
-
-- 目标是家庭版/普通云电脑。
-- 不依赖官方 GUI 客户端暗中保持桌面。
-- 独立状态验证每分钟记录一次云电脑状态。
-- 40 分钟以上运行窗口内没有出现 `已关机` 或非运行态。
-- 协议 trace 能证明已到达 display path，至少看到 `DISPLAY_INIT` 和 Surface/Draw/MARK 或等价显示活动。
-
-## 3. 已否决路线
-
-### 3.1 Docker
-
-Docker 方案已放弃。
-
-原因：
-
-- 早期 Docker/Web UI 方案只是把旧“套娃保活”包装起来，没有解决协议级桌面保活。
-- 容器化增加了构建缓存、镜像发布、客户端依赖体积、运行环境差异等额外问题。
-- 当前核心瓶颈是协议复现，不是部署方式。
-
-后续 agent 不要继续改 Dockerfile、docker-compose 或旧 Web UI。当前仓库里旧 JS/Docker 文件显示为删除，是预期方向，不要回滚。
-
-### 3.2 纯 HTTP 桌面保活
-
-已从多平台 HAR 和长测中否决。
-
-观察到的家庭版可见 HTTP 定时接口包括：
-
-```text
-/cc/cloudPc/heartbeat/v2
-/cc/cloudPc/infoReport/v2
-/system/logReport/config/v2
-```
-
-它们能返回业务成功或可接受状态，但不能证明桌面会话继续存在。已有 HTTP replay 长测出现过服务端接受请求但云电脑仍进入关机/休眠的情况。
-
-政企版博客中出现的接口在家庭版抓包里没有出现：
-
-```text
-/resource/desktopUptime
-/session/machineConnect
-/machine/pushConnectEventData
-```
-
-结论：家庭版现有抓包没有发现能独立保活桌面的纯 HTTP endpoint。
-
-### 3.3 CAG HTTPS 保活
-
-CAG HTTPS 现在只用于：
-
-- boot / 唤醒云电脑；
-- 获取 `connectStr` 和 RAP/ZIME 连接材料；
-- 辅助定位 native desktop transport。
-
-它不能作为最终保活方案。
-
-原因：
-
-- CAG 可以把云电脑拉回 `运行中`，这会掩盖真实关机事实。
-- CAG 可能替换或挤掉官方客户端桌面会话。
-- `CAG + HTTP prime` 组合在独立电源监控下仍出现失败。
-
-后续验证时，不要用“每隔几分钟 CAG 一次，状态又变运行中”作为成功证明。这属于拉起/顶号/污染测试，不是桌面保活。
-
-## 4. 项目结构
-
-主要入口：
-
-```text
-bin/cmcc_cloud_alive.py
-cmcc_cloud_alive/main.py
-```
-
-核心模块：
-
-```text
-cmcc_cloud_alive/core.py              SOHO API、签名、加密、状态持久化
-cmcc_cloud_alive/auth.py              密码登录封装
-cmcc_cloud_alive/cloud.py             云电脑列表、选择、状态
-cmcc_cloud_alive/token.py             token 检查和重登
-cmcc_cloud_alive/cag_boot.py          CAG boot/connect material 获取
-cmcc_cloud_alive/cag_keepalive.py     旧 CAG 验证逻辑，保留为反例和材料入口
-cmcc_cloud_alive/desktop_keepalive.py 旧 HTTP 验证逻辑，保留为反例
-cmcc_cloud_alive/power_monitor.py     独立电源状态监控
-cmcc_cloud_alive/verified_run.py      实验进程 + 独立状态验证
-cmcc_cloud_alive/spice_protocol.py    离线 SPICE/Chuanyun codec
-cmcc_cloud_alive/zime_probe.py        ZIME/transport trace 分析
-cmcc_cloud_alive/strategy.py          路线选择，目前 auto 指向未实现 SPICE target
-```
-
-动态探针：
-
-```text
-research/zime-probe.c
-scripts/build-zime-probe.sh
-scripts/run-zime-probe.sh
-```
-
-验证脚本：
-
-```text
-scripts/power-monitor.sh
-scripts/verified-run.sh
-```
-
-文档：
-
-```text
-README.md
-docs/protocol-keepalive.md
-docs/research-notes.md
-docs/delivery-handoff.md
-```
-
-证据摘要：
-
-```text
-docs/evidence/
-reports/
-```
-
-## 5. 当前本地状态
-
-仓库工作区不是干净状态。当前方向是从旧 JS/Docker 项目迁移为 Python 协议研究项目。
-
-你会看到大量旧文件删除，例如：
-
-```text
-Dockerfile
-docker-compose.yml
-bin/cmcc-cloud-alive.js
-lib/protocol/*.js
-tests/*.test.js
-```
-
-也会看到新文件加入，例如：
-
-```text
-bin/cmcc_cloud_alive.py
-cmcc_cloud_alive/
-research/
-scripts/build-zime-probe.sh
-scripts/run-zime-probe.sh
-scripts/verified-run.sh
-tests/test_python_modules.py
-docs/evidence/
-```
-
-不要把这些删除当成误删回滚。它们是 Docker/JS 旧路线废弃后的重构结果。
-
-敏感状态：
-
-```text
-.tmp/state.json
-```
-
-该文件包含本地登录状态和可能的缓存凭据。文档、提交、报告中不要展开明文凭据。
-
-目标云电脑：
+目标云电脑（脱敏）：
 
 ```text
 userServiceId=2663816
@@ -228,151 +27,181 @@ userServiceId=2663816
 spuCode=zte-cloud-pc
 ```
 
-## 6. 最近一次短验证结果
+## 2. 当前结论
 
-执行时间：2026-07-02 08:48-08:50 Asia/Shanghai
+截至 2026-07-05，项目状态：
 
-### 6.1 单元测试
+- **ZTE 路线 P0-P12 已完成并提交**：从路由分类(L0)到 120s short keepalive(L13)全链路 Python 实现，258 测试全绿。
+- **SCG 路线已 fork Go binary + Python subprocess shim**：`scg_go/cmcc_keepalive`（Go 编译产物）+ `cmcc_cloud_alive/scg_route.py`（Python 调用层），17 测试覆盖。
+- **CLI `product-keepalive` 双路线接线 OK**：自动通过 firmAuth 分类路由到 ZTE 或 SCG 后端（无 `--route` 参数，路由由 `product_router.classify_firm_auth_route()` 自动判断）。
+- **L14（40 分钟 live verified-run）未执行**：需真实网络环境 + 凭据，测试环境无法完成。
 
-命令：
+一句话：协议级保活的代码实现与测试覆盖已完成，差最后一步真实环境 40 分钟 live 验证。
 
-```bash
-cd /home/demo/cmcc-cloud-alive
-python3 -m unittest discover -s tests -p 'test_python_*.py' -v
-```
+## 3. 已否决路线
 
-结果：
+### 3.1 Docker
 
-```text
-Ran 33 tests in 1.390s
-OK
-```
+完全放弃。环境隔离与桌面协议不兼容。
 
-说明：
+### 3.2 纯 HTTP 桌面保活
 
-- 之前是 32 个测试。
-- 本轮新增了一个测试，确保 `DISPLAY_INIT` 只在低层 `transport_buffer` receive 路径出现时，也被算作协议进展。
+已证伪。HTTP visible timers 不足以证明桌面保活；家庭版未发现 `/resource/desktopUptime` 类 endpoint。
 
-### 6.2 ZIME 探针构建
-
-命令：
-
-```bash
-scripts/build-zime-probe.sh
-```
-
-结果：
+反例证据：
 
 ```text
-/home/demo/restore/cmcc-cloud-alive/build/research/zime-probe.so
+docs/evidence/http-official-client-40min-20260701.json
+docs/evidence/cross-platform-har-summary-20260701.json
 ```
 
-### 6.3 离线 SPICE proof
+### 3.3 CAG HTTPS 保活
 
-命令：
+已证伪。CAG 会话路线会污染/顶掉真实客户端使用。
+
+反例证据：
+
+```text
+docs/evidence/cag-official-session-takeover-20260701.json
+docs/evidence/cag-plus-http-prime-failed-20260702.json
+```
+
+## 4. 项目结构
+
+```text
+/home/demo/restore/cmcc-cloud-alive/
+├── bin/cmcc_cloud_alive.py          # CLI 入口
+├── cmcc_cloud_alive/                # Python 包
+│   ├── main.py                      # CLI argparse + 子命令分发
+│   ├── product_router.py            # firmAuth 路由分类 (ZTE/SCG/ERROR)
+│   ├── zte_route.py                 # ZTE 保活主路由 (material→CAG→mux→raw→keepalive)
+│   ├── zte_connect_params.py        # 内层 SPICE 连接参数 (from connectStr)
+│   ├── zte_cag.py                   # ZTE CAG TCP/TLS 传输
+│   ├── zte_cag_mux.py               # CAG mux 多链路
+│   ├── zte_cag_proxy.py             # CAG proxy
+│   ├── zte_raw_spice.py             # raw SPICE 子通道 (main/display 握手)
+│   ├── zte_security.py              # ZTE 安全/加密
+│   ├── scg_route.py                 # SCG 路线 Python subprocess shim
+│   ├── spice_protocol.py            # SPICE 编解码 (离线 codec)
+│   ├── rap_zime.py                  # RAP/ZIME 传输 (历史研究产物)
+│   ├── zime_probe.py                # ZIME 动态探针
+│   ├── zime_native_bridge.py        # ZIME native bridge
+│   ├── trace_timeline.py            # trace 时序提取
+│   ├── verified_run.py              # verified-run 框架
+│   ├── power_monitor.py             # 电源状态独立监控
+│   ├── core.py / cloud.py / auth.py # SOHO/API 层 (登录/token/列表/状态)
+│   └── ...
+├── scg_go/                          # SCG Go fork (蓝本移植)
+│   ├── cmcc_keepalive               # 编译产物 (binary)
+│   ├── main.go / cmd/               # 入口
+│   └── internal/                    # scg/zte/spice/crypto/chuanyun/cem
+├── tests/                           # 258 测试
+├── scripts/                         # verified-run.sh / build-zime-probe.sh 等
+├── docs/                            # 本文档 + 证据 + 报告
+└── reports/                         # trace / verified-run 报告
+```
+
+## 5. 当前本地状态
+
+敏感状态文件：
+
+```text
+.tmp/state.json
+```
+
+该文件包含本地登录状态和可能的缓存凭据。文档、提交、报告中不要展开明文凭据。
+
+## 6. 测试覆盖
+
+258 测试，全绿。分布：
+
+```text
+tests/test_python_modules.py:        127  (核心模块单测)
+tests/test_zte_cag_mux_proxy.py:      35  (CAG mux/proxy, L10)
+tests/test_zte_cag.py:                34  (CAG TCP/TLS, L9)
+tests/test_zte_raw_spice.py:          22  (raw SPICE main/display, L11/L12)
+tests/test_scg_route.py:              17  (SCG subprocess shim)
+tests/test_cli.py:                    13  (CLI 子命令, L0)
+tests/test_e2e_zte_keepalive.py:       6  (端到端 ZTE keepalive, L12/L13)
+tests/test_zte_keepalive_session.py:   4  (120s keepalive session, L13)
+合计:                                258
+```
+
+运行命令：
 
 ```bash
-python3 bin/cmcc_cloud_alive.py spice-offline-proof
+cd /home/demo/restore/cmcc-cloud-alive
+.venv/bin/python -m pytest -q
 ```
 
-结果摘要：
+## 7. 代码层已实现能力
 
-```json
-{
-  "ok": true,
-  "route": "offline-spice-codec",
-  "displayInitHex": "65000e0000000100004001000000000100008000",
-  "successSignal": "DISPLAY_INIT sent and surface/draw/mark signal observed"
-}
+### 7.1 SOHO/API 层
+
+已实现：密码登录、token 检查、凭据缓存重登、云电脑列表、选择默认云电脑、状态查询、账号保活、logout。
+
+### 7.2 路由分类 (L0)
+
+`product_router.classify_firm_auth_route(auth)` 根据 firmAuth 返回 `zte` / `scg` / `error`。已通过 live route-check 验证（commit f832b2e: kind=zte）。
+
+### 7.3 ZTE 路线 (L8-L13)
+
+全链路 Python 实现：
+
+```text
+material (L8)     zte_route.run_material → token/list/connectStr
+CAG TCP/TLS (L9)  zte_cag → 外层 CAG 传输建连
+CAG mux (L10)     zte_cag_mux → 多链路 open link1
+raw main (L11)    zte_raw_spice → SPICE main channel MAIN_INIT
+raw display (L12) zte_raw_spice → SPICE display channel DISPLAY_INIT
+keepalive (L13)   zte_route.run_zte_keepalive_session → 120s short keepalive
 ```
 
-注意：这只是本地 codec proof，不是云桌面保活 proof。
+外层 CAG 与内层 SPICE 严格分离（P6: `OuterCAGTarget` / `InnerConnectParams`）。
 
-### 6.4 现有 ZIME trace 重新分析
+### 7.4 SCG 路线
 
-命令：
+`scg_route.py` 作为 Python subprocess shim 调用 `scg_go/cmcc_keepalive`（Go 编译 binary）。Go 代码从蓝本 fork，包含 scg/zte/spice/crypto/chuanyun/cem 内部包。
+
+### 7.5 CLI product-keepalive
 
 ```bash
-python3 bin/cmcc_cloud_alive.py analyze-zime-probe \
-  reports/zime-transport-20260702-082921.jsonl \
-  --report-file reports/zime-transport-20260702-082921.analysis.json
+python3 bin/cmcc_cloud_alive.py product-keepalive [options] <userServiceId>
 ```
 
-结果摘要：
+参数（照实，来自 main.py argparse）：
 
-```json
-{
-  "ok": true,
-  "records": 53576,
-  "displayInitSeen": true,
-  "displayInitSent": false,
-  "displayInitAndDisplayActivitySeen": true,
-  "ackPongMaintenanceSeen": true,
-  "nextStep": "Use this trace to map channel/stream IDs and implement the minimal RAP/ZIME/SPICE runner, then prove it with verified-run."
-}
+```text
+--duration N     SCG 连接持续秒数 (默认 120; 0=直到中断)
+--forever        持续运行 SCG keepalive binary
+--user-service-id  覆盖目标 userServiceId
+--vm-id          覆盖目标 vmId
+--binary         覆盖 SCG keepalive binary 路径
+--config-dir     覆盖 SCG 配置目录
 ```
 
-重点解释：
+> 注意：`product-keepalive` 没有 `--route` 参数。路由通过 firmAuth 自动分类：ZTE 走 Python 实现，SCG 走 Go binary。
 
-- `displayInitSeen=true`：trace 中确实看到 `DISPLAY_INIT`。
-- `displayInitSent=false`：它不是从当前分类里的 send 路径看到，而是低层 transport receive 路径暴露出来。
-- 不能因为 `displayInitSent=false` 就说没看到 `DISPLAY_INIT`。
-- 已修复 `zime_probe.py` 的 `nextStep` 文案判断，改为看 `displayInitSeen`。
+### 7.6 离线 SPICE codec
 
-## 7. 关键证据文件
+`spice_protocol.py` 已有 REDQ link message 编解码、SPICE mini/data header、DISPLAY_INIT 编码、SET_ACK/ACK_SYNC、PING/PONG、Chuanyun frame、RSA OAEP ticket encryption。
 
-### 7.1 官方客户端 3 分钟 ZIME trace
+### 7.7 ZIME 探针与 trace 分析
+
+`zime_probe.py` + `zime_native_bridge.py` + `trace_timeline.py` 已能输出 event/payload 统计、fd/channel 粗统计、display-init/display-activity 判断、ACK/PONG maintenance 判断。
+
+## 8. 关键证据文件
+
+### 8.1 官方客户端 ZIME trace
 
 ```text
 reports/zime-transport-20260702-082921.jsonl
 reports/zime-transport-20260702-082921.analysis.json
-reports/zime-transport-20260702-082921.verified.json
-reports/zime-transport-20260702-082921.verified.out
 ```
 
-这是目前最关键的协议证据。
+这是协议证据来源：records=53576，观察到 DISPLAY_INIT + display activity + ACK/PONG maintenance。
 
-重要统计：
-
-```text
-records=53576
-transport_buffer=30447
-zime_call=22990
-transport_connect=95
-ssl_buffer=36
-```
-
-观察到的 payload kind：
-
-```text
-spice-data: 12958
-spice-set-ack: 2496
-spice-ack: 135
-chuanyun-frame:unknown: 113
-spice-ack-sync: 105
-spice-ping: 93
-spice-pong: 39
-spice-link: 24
-spice-channels-list: 4
-spice-display-init: 3
-spice-mark: 2
-spice-main-init: 1
-spice-draw-copy: 1
-spice-surface-create: 1
-```
-
-协议证据：
-
-```text
-DISPLAY_INIT + display activity: true
-ACK/PONG maintenance: true
-```
-
-但这仍然只是 3 分钟官方客户端 trace，不是独立保活成功。
-
-### 7.2 旧 HTTP/CAG 反例证据
-
-主要文件：
+### 8.2 旧 HTTP/CAG 反例证据
 
 ```text
 docs/evidence/http-official-client-40min-20260701.json
@@ -381,63 +210,9 @@ docs/evidence/cag-plus-http-prime-failed-20260702.json
 docs/evidence/cross-platform-har-summary-20260701.json
 ```
 
-这些文件用于证明：
-
-- HTTP visible timers 不足以证明桌面保活；
-- CAG 会话路线会污染/顶掉真实客户端使用；
-- 多平台 HAR 没有发现家庭版可用的政企式 uptime endpoint。
-
-## 8. 官方客户端 trace 的操作方式
-
-已有成功采样命令形态：
-
-```bash
-cd /home/demo/cmcc-cloud-alive
-scripts/build-zime-probe.sh
-
-ZIME_PROBE_LOG=reports/zime-transport-<timestamp>.jsonl \
-ZIME_PROBE_MAX_BYTES=8192 \
-CMCC_ALIVE_STATE=.tmp/state.json \
-python3 bin/cmcc_cloud_alive.py verified-run \
-  --duration 180 \
-  --interval 60 \
-  --report-file reports/zime-transport-<timestamp>.verified.json \
-  2663816 -- scripts/run-zime-probe.sh -- /home/demo/.local/bin/cmcc-jtydn-stable
-```
-
-当官方 Linux 客户端窗口出现后，需要进入 GUI 点击目标云电脑卡片的“连接”。此前测试中窗口大概在：
-
-```text
-x=375 y=172 width=1236 height=695
-```
-
-点击过的连接按钮大致坐标：
-
-```text
-586 412
-```
-
-这个坐标只作为历史参考，不要硬编码为自动化结论。后续最好用截图或窗口识别确认。
-
-旧进程清理方式：
-
-```bash
-pkill -TERM -x cmcc-jtydn || true
-pkill -TERM -x bootCypc || true
-pkill -TERM -x uSmartView_VDI_ || true
-sleep 2
-pkill -KILL -x cmcc-jtydn || true
-pkill -KILL -x bootCypc || true
-pkill -KILL -x uSmartView_VDI_ || true
-```
-
-注意：不要用容易匹配到自身 shell 的 `pkill -f` 长字符串。
-
 ## 9. verified-run 使用规则
 
-`verified-run` 的 CLI 参数顺序很重要。
-
-正确：
+`verified-run` 的 CLI 参数顺序很重要（argparse REMAINDER，选项必须在 userServiceId 前）：
 
 ```bash
 CMCC_ALIVE_STATE=.tmp/state.json scripts/verified-run.sh \
@@ -447,370 +222,90 @@ CMCC_ALIVE_STATE=.tmp/state.json scripts/verified-run.sh \
   2663816 -- <protocol-runner-command>
 ```
 
-错误：
+正式证明窗口：duration >= 2400s（40 分钟），interval = 60s。
+
+失败条件：任意状态快照为已关机 / 非运行态 / 查询错误 / 进程异常退出 / 运行时间不足 / trace 无 display path 活动。
+
+## 10. 明确未完成事项
+
+- **L14：40 分钟 live verified-run 未执行**。需真实网络环境 + 凭据，测试环境无法完成。
+- SCG 路线的 live 验证同样未执行（Go binary 已编译，subprocess shim 已接线，但未在真实环境跑通）。
+- 是否顶号/是否影响官方客户端的最终结论（需 live 验证后才能确认）。
+
+当前项目可以说：
+
+```text
+ZTE 路线 P0-P12 代码实现完成，258 测试覆盖；
+SCG 路线 Go binary fork + Python shim 完成；
+CLI product-keepalive 双路线接线 OK；
+尚未完成 40 分钟真实环境 live 验证 (L14)。
+```
+
+## 11. 后续 agent 接手步骤
+
+1. 阅读 `docs/delivery-handoff.md`、`docs/final-acceptance-report.md`、`docs/README.md`。
+2. 运行测试确认基线：
 
 ```bash
-scripts/verified-run.sh 2663816 --duration 2400 ...
+cd /home/demo/restore/cmcc-cloud-alive
+.venv/bin/python -m pytest -q
 ```
 
-原因：命令参数使用 `argparse.REMAINDER`，选项必须放在 `userServiceId` 之前。
-
-正式证明窗口：
-
-```text
-duration >= 2400 seconds
-interval = 60 seconds
-```
-
-也就是至少 40 分钟，每分钟独立查一次云电脑状态。
-
-失败条件：
-
-- 任意状态快照是 `已关机`；
-- 任意状态不是运行态；
-- 状态查询错误无法确认；
-- 实验进程异常退出；
-- 运行时间不足；
-- trace 没有 display path 活动。
-
-## 10. 协议拆解下一步
-
-下一步不要再做 HTTP endpoint 猜测。要从已捕获的 ZIME trace 里拆 native 协议。
-
-建议顺序：
-
-1. 读取 `reports/zime-transport-20260702-082921.analysis.json`。
-2. 从 `reports/zime-transport-20260702-082921.jsonl` 中按 fd/peer/process/function 重建链路。
-3. 区分本地 IPC、loopback socket、UDP/TCP 外联和 SSL。
-4. 锁定和 SPICE display path 相关的 fd，例如历史分析中重点出现过：
-
-```text
-fd=104    大量 UDP/ZTEC 相关 sendto/recvmsg
-fd=110    127.0.0.1:48758，本地 SPICE/display 数据高频 receive
-family:1  Unix/domain socket 或本地进程间通道
-```
-
-5. 提取时序：
-
-```text
-spice-link
-  -> spice-main-init
-  -> spice-channels-list
-  -> spice-display-init
-  -> spice-surface-create / spice-draw-copy / spice-mark
-  -> spice-set-ack / spice-ack-sync
-  -> spice-ping / spice-pong
-```
-
-6. 研究 RAP/ZIME 外层帧如何承载 SPICE payload。
-7. 写最小 Python runner，不启动 `uSmartView_VDI_Client`。
-8. 用 `verified-run` 做 40 分钟证明。
-
-## 11. ZIME/RAP/SPICE 已知方向
-
-从 Linux 客户端和 trace 看，家庭版路径不是简单 HTTP：
-
-```text
-libvdconn.so.1.0.0            CAG/connect material 和进程拉起
-libZIMEDataEngine.so          RAP/ZIME data transport
-libspice-client-glib-zte...   SPICE main/display protocol
-uSmartView_VDI_Client         桌面显示客户端
-```
-
-目前探针 hook 的关键函数包括：
-
-```text
-ZIME_CreateDataEngine
-ZIME_Init
-ZIME_SetDataChannelCallback
-ZIME_SetDataExternalTransport
-ZIME_CreateDataChannel
-ZIME_CreateDataStream
-ZIME_SendData
-ZIME_SendData2
-ZIME_ReceiveData
-ZIME_DataChannelProcess2
-connect/send/recv/sendto/recvfrom/sendmsg/recvmsg/read/write
-SSL_write/SSL_read
-```
-
-trace 中见过 `ZTEC` UDP 前缀，例如：
-
-```text
-5a54454306007f020a0a1c27010099b0a00400000000296e3d2f
-```
-
-这应该是后续拆 RAP/ZIME 外层封装的重点。
-
-## 12. 代码层已实现能力
-
-### 12.1 SOHO/API 层
-
-已实现：
-
-- 密码登录；
-- token 检查；
-- 凭据缓存重登；
-- 云电脑列表；
-- 选择默认云电脑；
-- 状态查询；
-- 账号保活；
-- logout。
-
-常用命令：
-
-```bash
-CMCC_ALIVE_STATE=.tmp/state.json python3 bin/cmcc_cloud_alive.py token-check
-CMCC_ALIVE_STATE=.tmp/state.json python3 bin/cmcc_cloud_alive.py list
-CMCC_ALIVE_STATE=.tmp/state.json python3 bin/cmcc_cloud_alive.py select 2663816
-CMCC_ALIVE_STATE=.tmp/state.json python3 bin/cmcc_cloud_alive.py status 2663816
-```
-
-### 12.2 CAG boot/material 层
-
-用途：只拿连接材料，不做保活结论。
-
-示例：
-
-```bash
-CMCC_ALIVE_STATE=.tmp/state.json python3 bin/cmcc_cloud_alive.py boot 2663816 \
-  --boot-wait 180 \
-  --timeout 30
-```
-
-历史连接材料摘要：
-
-```text
-type=rap
-serverType=hy
-host=10.10.2.127
-port=10012
-accessTokenPresent=true
-cpsidPresent=true
-```
-
-### 12.3 离线 SPICE codec
-
-`cmcc_cloud_alive/spice_protocol.py` 已有：
-
-- REDQ link message 编解码；
-- SPICE mini/data header 编解码；
-- `DISPLAY_INIT` 编码；
-- SET_ACK decode；
-- ACK_SYNC encode；
-- PING/PONG encode/decode；
-- Chuanyun 24-byte frame encode/decode；
-- RSA public key DER parse；
-- OAEP ticket encryption；
-- display-init + Surface/Draw/MARK success predicate。
-
-注意：这是离线协议积木，不是完整 runner。
-
-### 12.4 ZIME trace 分析
-
-`cmcc_cloud_alive/zime_probe.py` 已能输出：
-
-- event/function 统计；
-- payload kind 统计；
-- fd/channel/stream 粗统计；
-- display-init/display-activity 判断；
-- ACK/PONG maintenance 判断；
-- 样本 payload 前缀。
-
-本轮修复：
-
-- `nextStep` 不再要求 `displayInitSent`；
-- 只要 `displayInitSeen=true`，就承认 trace 已观察到 `DISPLAY_INIT`；
-- 新增测试覆盖 receive 路径上的 `DISPLAY_INIT`。
-
-## 13. 明确未完成事项
-
-还没有完成：
-
-- 独立 RAP/ZIME/SPICE runner；
-- RAP/ZIME 外层 framing 复现；
-- 根据 `connectStr` 自动建立 transport；
-- SPICE main/display channel 真实握手；
-- 使用 Python 直接发送 `DISPLAY_INIT`；
-- 真实 ACK/PONG loop；
-- 40 分钟独立电源状态证明；
-- 是否顶号/是否影响官方客户端的最终结论。
-
-当前项目不能对外宣称“协议级保活已完成”。只能说：
-
-```text
-基础 SOHO/CAG 能力完成；
-HTTP/CAG 错误路线已被排除；
-官方 Linux 客户端 trace 中已捕获到 RAP/ZIME/SPICE display path 的关键协议证据；
-下一步是复现 transport/runner 并做 40 分钟 verified-run。
-```
-
-## 14. 后续 agent 接手步骤
-
-建议新 agent 第一轮按这个顺序执行：
-
-1. 使用 `reverse-skill`，读取 reverse-skill 包和路由文件。
-2. 阅读：
-
-```text
-README.md
-docs/protocol-keepalive.md
-docs/research-notes.md
-docs/delivery-handoff.md
-```
-
-3. 运行短验证：
-
-```bash
-python3 -m unittest discover -s tests -p 'test_python_*.py' -v
-scripts/build-zime-probe.sh
-python3 bin/cmcc_cloud_alive.py spice-offline-proof
-python3 bin/cmcc_cloud_alive.py analyze-zime-probe \
-  reports/zime-transport-20260702-082921.jsonl \
-  --report-file reports/zime-transport-20260702-082921.analysis.json
-```
-
-4. 从 `reports/zime-transport-20260702-082921.jsonl` 写一个更细的 transport timeline 提取器。
-5. 优先分析 fd/peer 与 payload kind 的关系，不要先猜协议。
-6. 找出最小必要消息序列。
-7. 实现 `cmcc_cloud_alive` 下独立的 runner 模块，建议不要塞回旧 `cag_keepalive.py` 或 `desktop_keepalive.py`。
-8. 所有实验必须走 `verified-run`。
-
-## 15. 建议新增模块
-
-建议后续新增：
-
-```text
-cmcc_cloud_alive/rap_zime.py
-cmcc_cloud_alive/spice_runner.py
-cmcc_cloud_alive/trace_timeline.py
-```
-
-建议职责：
-
-```text
-rap_zime.py       负责 connectStr -> RAP/ZIME transport 建连、外层帧收发
-spice_runner.py   负责 SPICE main/display 握手、DISPLAY_INIT、ACK/PONG loop
-trace_timeline.py 从 ZIME JSONL 提取时序，辅助 runner 对齐官方客户端
-```
-
-不要把新 runner 写成“再启动官方客户端并模拟点击”。那会回到套娃路线。
-
-## 16. 验证设计建议
-
-开发阶段可以有三类测试，但必须区分含义：
-
-### 16.1 离线 codec 测试
-
-目的：验证 encode/decode 正确。
-
-命令：
-
-```bash
-python3 bin/cmcc_cloud_alive.py spice-offline-proof
-```
-
-结论级别：本地协议积木可用。
-
-### 16.2 短 trace 对齐测试
-
-目的：观察 runner 是否发出和官方客户端类似的协议序列。
-
-时长：1-3 分钟即可。
-
-结论级别：协议行为接近，但不是保活成功。
-
-### 16.3 40 分钟 verified-run
-
-目的：证明云电脑不会在家庭版默认空闲窗口后关机。
-
-命令形态：
-
-```bash
-CMCC_ALIVE_STATE=.tmp/state.json scripts/verified-run.sh \
-  --duration 2400 \
-  --interval 60 \
-  --report-file reports/<runner>-40min.verified.json \
-  2663816 -- python3 bin/cmcc_cloud_alive.py <runner-command>
-```
-
-结论级别：如果所有条件满足，才可以说该路线有效。
-
-## 17. 用户强调过的要求
-
-后续 agent 必须遵守：
+3. 如需 live 验证 L14：准备真实凭据（环境变量传入），用 `verified-run` 跑 40 分钟。
+4. live 验证时必须用独立 `power_monitor` 记录完整时间线，防止假成功。
+5. 如发现顶号，如实标注 session-owning/顶号。
+
+## 12. 用户强调过的要求
 
 - 不要猜，抓包和真实 trace 优先。
 - 家庭版和政企版不要混为一谈。
-- 博客只提供思路，不要照搬政企版接口。
 - HTTP/CAG 如果不能证明桌面保活，就不要继续空跑。
 - 每次长测必须独立验证云电脑是否关机。
-- 成功信号要直观，不能只输出“运行中”。
-- 如发现会顶号，也要明确标注“session-owning/顶号”，不要包装成无侵入保活。
+- 成功信号要直观，不能只输出"运行中"。
+- 如发现会顶号，必须明确标注，不要包装成无侵入保活。
 - Docker 版本完全放弃。
 
-## 18. 可参考外部资料
+## 13. 风险和坑
 
-主要协议方向参考：
+### 13.1 假成功风险
 
-```text
-https://codming.com/posts/cmcc-cloud-computer-keepalive/
-```
+CAG 可以把状态重新拉成"运行中"，会掩盖前一轮已休眠/关机的问题。必须用独立 monitor 记录完整时间线。
 
-方法论参考，不是家庭版协议来源：
+### 13.2 官方客户端污染
 
-```text
-https://hansiy.net/p/86b7133e
-```
+如果官方客户端还在连接，云电脑不休眠可能是官方客户端在保活。正式 proof 必须说明官方客户端是否存在。
 
-Codming 方向里的核心启发是：
+### 13.3 顶号/挤号
 
-```text
-桌面保活发生在 display/SPICE 路径，不是账号 HTTP，也不是单纯连接材料。
-```
+旧 CAG 研究曾导致其它客户端收到"该云电脑已在其他设备上登录"的行为。后续 runner 如果也会顶号，必须如实标注。
 
-Hansiy 方向里的核心启发是：
+### 13.4 display-init 方向判断
 
-```text
-源码分析和抓包冲突时，以抓包为准。
-登录/签名/加密必须先做小接口验证。
-业务错误不能吞成网络错误。
-```
+真实 trace 中 DISPLAY_INIT 可能出现在低层 receive 路径。分析时应看 `displayInitSeen`，不要只看 `displayInitSent`。
 
-但本项目目前没有发现家庭版的 `/resource/desktopUptime` 类 HTTP endpoint，所以不要再围绕该接口空转。
+### 13.5 参数顺序
 
-## 19. 风险和坑
+`verified-run` 的 options 必须放在 userServiceId 前面，否则会被 argparse.REMAINDER 吃掉。
 
-### 19.1 假成功风险
+### 13.6 L13 测试为 mock 网络
 
-CAG 可以把状态重新拉成 `运行中`，会掩盖前一轮已经休眠/关机的问题。因此必须用独立 monitor 记录完整时间线。
+L13（120s keepalive）的测试使用 fake/mock 网络层，不是真实 CAG 连接。真实连接稳定性需 L14 live 验证。
 
-### 19.2 官方客户端污染
-
-如果官方客户端还在连接，云电脑不休眠可能是官方客户端在保活，不是新 runner 生效。正式 proof 必须说明官方客户端是否存在。
-
-### 19.3 顶号/挤号
-
-旧 CAG 和部分 connect-event 研究曾导致其它客户端收到类似“该云电脑已在其他设备上登录”的行为。后续 runner 如果也会顶号，必须如实标注。
-
-### 19.4 display-init 方向判断
-
-真实 trace 中 `DISPLAY_INIT` 可能出现在低层 receive 路径，而不是高层 ZIME send 路径。分析时应看 `displayInitSeen`，不要只看 `displayInitSent`。
-
-### 19.5 参数顺序
-
-`verified-run` 的 options 必须放在 `userServiceId` 前面，否则会被 `argparse.REMAINDER` 吃掉。
-
-## 20. 交付状态一句话
-
-当前交付状态：
+## 14. 交付状态一句话
 
 ```text
-项目已完成从错误 HTTP/CAG 路线到 RAP/ZIME/SPICE native 协议路线的收敛；
-已具备登录、状态、boot/material、独立验证、离线 SPICE codec、ZIME 动态探针和 trace 分析能力；
-已捕获官方 Linux 客户端 display path 关键协议证据；
-尚未完成独立协议 runner，也尚未完成 40 分钟真实保活证明。
+ZTE 路线 P0-P12 全链路 Python 实现完成 (258 测试覆盖)；
+SCG 路线 Go binary fork + Python shim 完成；
+CLI product-keepalive 双路线自动路由接线 OK；
+尚未完成 40 分钟真实环境 live verified-run (L14)。
 ```
+
+---
+
+# 历史研究日志（附录，按时间倒序累积）
+
+> 以下为 2026-07-02 至 2026-07-05 的增量研究日志，保留供接手者追溯协议拆解过程。
+> 核心交接信息见上方 §1-§14。
 
 ## 20. 2026-07-02 runner 输入序列提取交接
 
