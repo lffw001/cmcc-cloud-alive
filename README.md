@@ -104,6 +104,26 @@ Handoff for the next agent:
 
 - [docs/delivery-handoff.md](docs/delivery-handoff.md)
 
+## Configuration
+
+All tunable values are environment variables with sensible defaults.  Copy
+[`.env.example`](.env.example) to `.env` and adjust as needed — `.env` is
+git-ignored so real credentials never enter version control.
+
+Key variables:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `CMCC_ALIVE_STATE` | `.tmp/state.json` | Login / selection state cache path |
+| `CMCC_ALIVE_PROFILE` | `linux` | Client profile (linux/windows/mac) |
+| `CMCC_ZTE_TARGET_VMID` | research target UUID | Target cloud-PC VM ID |
+| `CCK_ZTE_KEEPALIVE_DURATION` | `120` | ZTE keepalive interval (seconds) |
+| `CCK_ZTE_CAG_AUTH_TEMPLATE_HEX` | *(empty)* | Pre-captured CAG auth template (hex) |
+| `CMCC_SCG_BINARY` | *(empty)* | Path to Go-compiled SCG keepalive binary |
+| `CMCC_ZIME_LIB` | bundled default | Path to `libZIMEDataEngine.so` |
+| `BBS_API_KEY` | *(empty)* | Internal BBS API key (live-run reports) |
+| `BBS_MASTER_TOKEN` | *(empty)* | Internal BBS master token |
+
 ## Basic Commands
 
 Run tests:
