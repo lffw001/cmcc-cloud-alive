@@ -2410,29 +2410,27 @@ def _simple_run_keepalive(target, state_path, protocol, interval_minutes, traffi
     interval_seconds = max(1, int(interval_minutes) * 60)
     traffic_seconds = max(1, int(traffic_seconds))
     _simple_ensure_token(state_path, "首次开机检查前")
-    print(f"\n[{core.short_time()}] 首次开机检查：只在任务开始时检测一次状态，必要时开机。", flush=True)
+    print("\n[首次开机检查] 正在检测云电脑状态……", flush=True)
     pre_snap = cloud.status(target, state_path)
+    pre_snap_text = pre_snap.get("vmStatusShow") or pre_snap.get("vmStatus")
+    print(f"[首次开机检查] 当前状态：{pre_snap_text} running={cloud.is_running(pre_snap)}", flush=True)
     if cloud.is_running(pre_snap):
-        print(f"[{core.short_time()}] 云桌面状态：开机运行中，跳过开机。", flush=True)
+        print("[首次开机检查] 云电脑已运行，跳过开机，马上进入第一轮保活。", flush=True)
     else:
         if str(protocol).upper() == "SCG":
-            print(
-                f"[{core.short_time()}] 检测到云桌面处于关机状态；当前选择的是SCG协议，"
-                "将按Go版本逻辑调用getConnectInfo触发云桌面开机，并在SCG连接前等待readyStatus=1。",
-                flush=True,
-            )
+            print("[首次开机检查] 云电脑未运行，当前选择SCG协议，将由getConnectInfo自动触发开机（无需二次确认）。", flush=True)
         else:
-            print(f"[{core.short_time()}] 检测到云桌面处于关机状态，正在执行开机...", flush=True)
+            print("[首次开机检查] 云电脑未运行，自动开机（只执行这一次，无需二次确认）……", flush=True)
             try:
                 cag_boot.ensure_running(target, state_path, boot_wait=180, timeout=30, refresh_wait=5)
             except Exception as boot_err:
-                print(f"[{core.short_time()}] 云桌面开机失败，任务终止，请检查账号权限或网络 ({boot_err})", flush=True)
+                print(f"[首次开机检查] 首次状态检测/开机失败，任务终止，不进入保活：{boot_err}", flush=True)
                 return
             post_snap = cloud.status(target, state_path)
             if cloud.is_running(post_snap):
-                print(f"[{core.short_time()}] 云桌面开机成功", flush=True)
+                print("[首次开机检查] 开机流程完成，马上进入第一轮保活。", flush=True)
             else:
-                print(f"[{core.short_time()}] 云桌面开机失败，任务终止，请检查账号权限或网络", flush=True)
+                print("[首次开机检查] 首次状态检测/开机失败，任务终止，不进入保活", flush=True)
                 return
     try:
         disc = desktop_keepalive.disconnect_time(target, state_path)
