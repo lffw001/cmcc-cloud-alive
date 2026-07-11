@@ -2292,19 +2292,41 @@ def _status_line(prefix, snap):
 
 
 def _simple_ensure_token(state_path, context="接口调用"):
-    """Ensure the selected profile has a valid token; auto re-login with saved password if expired."""
+    """Ensure the selected profile has a valid token; auto re-login with saved password if expired.
+
+    HTTP 5xx / network blips are *not* treated as token expiry: re-login against
+    a dying gateway just cascades into a full process abort.  Return False so
+    the long-run loop can skip/retry the round instead of exiting to cmcc>.
+    """
     try:
         valid, response = token.check_token(state_path)
         if valid:
             return True
+        if isinstance(response, dict) and response.get("transient"):
+            msg = response.get("msg") or "gateway/network transient"
+            print(
+                f"[{core.short_time()}] {context}：接口瞬时失败（不判定token失效、不重登）：{msg}",
+                flush=True,
+            )
+            return False
         code = response.get("code") if isinstance(response, dict) else None
-        print(f"[{core.short_time()}] {context}：token已失效/不可用(code={code})，使用档案内账号密码自动重新登录...", flush=True)
-        token.ensure_token(state_path, relogin=True)
+        print(
+            f"[{core.short_time()}] {context}：token已失效/不可用(code={code})，"
+            f"使用档案内账号密码自动重新登录...",
+            flush=True,
+        )
+        ok, refreshed = token.ensure_token(state_path, relogin=True)
+        if not ok:
+            # ensure_token itself may refuse re-login on a later transient blip
+            msg = refreshed.get("msg") if isinstance(refreshed, dict) else refreshed
+            print(f"[{core.short_time()}] {context}：token刷新未成功：{msg}", flush=True)
+            return False
         print(f"[{core.short_time()}] {context}：token已自动刷新", flush=True)
         return True
     except Exception as err:
+        # Never re-raise into the forever loop — log and let the caller decide.
         print(f"[{core.short_time()}] {context}：token检查/自动重登失败：{err}", flush=True)
-        raise
+        return False
 
 
 def _simple_refresh_token_if_needed(state_path, context="账号token检测"):
@@ -2314,9 +2336,24 @@ def _simple_refresh_token_if_needed(state_path, context="账号token检测"):
         if valid:
             print(f"[{core.short_time()}] {context}：token有效", flush=True)
             return True
+        if isinstance(response, dict) and response.get("transient"):
+            msg = response.get("msg") or "gateway/network transient"
+            print(
+                f"[{core.short_time()}] {context}：接口瞬时失败（跳过重登）：{msg}",
+                flush=True,
+            )
+            return False
         code = response.get("code") if isinstance(response, dict) else None
-        print(f"[{core.short_time()}] {context}：token已失效/不可用(code={code})，自动登录刷新token...", flush=True)
-        token.ensure_token(state_path, relogin=True)
+        print(
+            f"[{core.short_time()}] {context}：token已失效/不可用(code={code})，"
+            f"自动登录刷新token...",
+            flush=True,
+        )
+        ok, refreshed = token.ensure_token(state_path, relogin=True)
+        if not ok:
+            msg = refreshed.get("msg") if isinstance(refreshed, dict) else refreshed
+            print(f"[{core.short_time()}] {context}：token刷新未成功：{msg}", flush=True)
+            return False
         print(f"[{core.short_time()}] {context}：token已自动刷新", flush=True)
         return True
     except Exception as err:
@@ -2441,60 +2478,93 @@ def _simple_run_keepalive(target, state_path, protocol, interval_minutes, traffi
     print("\n开始保活：", flush=True)
     print("- 后续每轮保活前不再检测开机、不再触发开机", flush=True)
     print("- 每分钟状态检测只打印展示，不联动任何开机操作", flush=True)
+    print("- 接口瞬时失败(5xx/网络)不退出，自动跳过本轮并重试", flush=True)
     print("- Ctrl+C 可退出\n", flush=True)
     round_no = 0
     last_status = 0.0
+    # Backoff after gateway blips so we don't hammer a dying openresty.
+    transient_backoff_seconds = 30
     try:
         while True:
             round_no += 1
-            _simple_ensure_token(state_path, f"第{round_no}轮保活前")
-            # Start round timing only after all pre-flight checks are done.
-            # Token refresh/re-login time must not consume the user-configured
-            # keepalive traffic duration or the configured round interval.
-            started = time.time()
-            print(f"[{core.short_time()}] 第{round_no}轮保活开始 protocol={protocol} duration={traffic_seconds}s", flush=True)
-            if protocol == "SCG":
+            try:
+                token_ok = _simple_ensure_token(state_path, f"第{round_no}轮保活前")
+                if not token_ok:
+                    # Transient 5xx or re-login failure: skip this round, wait, continue.
+                    print(
+                        f"[{core.short_time()}] 第{round_no}轮保活跳过："
+                        f"token检查未通过，{transient_backoff_seconds}s后重试",
+                        flush=True,
+                    )
+                    time.sleep(transient_backoff_seconds)
+                    continue
+                # Start round timing only after all pre-flight checks are done.
+                # Token refresh/re-login time must not consume the user-configured
+                # keepalive traffic duration or the configured round interval.
+                started = time.time()
                 print(
-                    f"[{core.short_time()}] 第{round_no}轮SCG保活：手选SCG，调用纯Python SCG协议 "
-                    f"duration={traffic_seconds}s userServiceId={target}",
+                    f"[{core.short_time()}] 第{round_no}轮保活开始 "
+                    f"protocol={protocol} duration={traffic_seconds}s",
                     flush=True,
                 )
-                product_report = _simple_forced_keepalive(target, state_path, "SCG", traffic_seconds) or {}
+                if protocol == "SCG":
+                    print(
+                        f"[{core.short_time()}] 第{round_no}轮SCG保活：手选SCG，调用纯Python SCG协议 "
+                        f"duration={traffic_seconds}s userServiceId={target}",
+                        flush=True,
+                    )
+                    product_report = _simple_forced_keepalive(
+                        target, state_path, "SCG", traffic_seconds
+                    ) or {}
+                    print(
+                        f"[{core.short_time()}] 第{round_no}轮SCG保活完成 "
+                        f"kind={product_report.get('kind')} ok={product_report.get('ok')} "
+                        f"stage={product_report.get('stage')} "
+                        f"duration={product_report.get('duration')}s",
+                        flush=True,
+                    )
+                else:
+                    # ZTE must use the same keepalive path that passed the long-test:
+                    # _run_zte_keepalive -> CAG/mux/raw-SPICE session.  Do NOT call
+                    # cmd_product_keepalive here: that command auto-classifies firmAuth
+                    # and would switch to SCG when scAuthCode is present, violating the
+                    # customer's explicit menu choice.
+                    print(
+                        f"[{core.short_time()}] 第{round_no}轮ZTE保活：手选ZTE，调用长测同款CAG/mux/raw-SPICE "
+                        f"duration={traffic_seconds}s userServiceId={target}",
+                        flush=True,
+                    )
+                    product_report = _simple_forced_keepalive(
+                        target, state_path, "ZTE", traffic_seconds
+                    ) or {}
+                    print(
+                        f"[{core.short_time()}] 第{round_no}轮ZTE保活完成 "
+                        f"kind={product_report.get('kind')} ok={product_report.get('ok')} "
+                        f"stage={product_report.get('stage')} "
+                        f"duration={product_report.get('duration')}s",
+                        flush=True,
+                    )
+                _simple_status_tick(target, state_path)
+                if str(mode) == "1":
+                    print(f"[{core.short_time()}] 保活结束", flush=True)
+                    print("单次保活任务已完成", flush=True)
+                    return
+                while time.time() - started < interval_seconds:
+                    remain = interval_seconds - (time.time() - started)
+                    time.sleep(min(60, max(1, int(remain))))
+                    if time.time() - last_status >= 60:
+                        _simple_status_tick(target, state_path)
+                        last_status = time.time()
+            except KeyboardInterrupt:
+                raise
+            except Exception as err:
+                # Never let a single-round failure (firmAuth 502, mux error, etc.)
+                # abort the forever long-test loop back to the cmcc> prompt.
                 print(
-                    f"[{core.short_time()}] 第{round_no}轮SCG保活完成 "
-                    f"kind={product_report.get('kind')} ok={product_report.get('ok')} "
-                    f"stage={product_report.get('stage')} duration={product_report.get('duration')}s",
+                    f"[{core.short_time()}] 第{round_no}轮保活异常（将继续下一轮）：{err}",
                     flush=True,
                 )
-            else:
-                # ZTE must use the same keepalive path that passed the long-test:
-                # _run_zte_keepalive -> CAG/mux/raw-SPICE session.  Do NOT call
-                # cmd_product_keepalive here: that command auto-classifies firmAuth
-                # and would switch to SCG when scAuthCode is present, violating the
-                # customer's explicit menu choice.
-                print(
-                    f"[{core.short_time()}] 第{round_no}轮ZTE保活：手选ZTE，调用长测同款CAG/mux/raw-SPICE "
-                    f"duration={traffic_seconds}s userServiceId={target}",
-                    flush=True,
-                )
-                product_report = _simple_forced_keepalive(target, state_path, "ZTE", traffic_seconds) or {}
-                print(
-                    f"[{core.short_time()}] 第{round_no}轮ZTE保活完成 "
-                    f"kind={product_report.get('kind')} ok={product_report.get('ok')} "
-                    f"stage={product_report.get('stage')} duration={product_report.get('duration')}s",
-                    flush=True,
-                )
-            _simple_status_tick(target, state_path)
-            if str(mode) == "1":
-                print(f"[{core.short_time()}] 保活结束", flush=True)
-                print("单次保活任务已完成", flush=True)
-                return
-            while time.time() - started < interval_seconds:
-                remain = interval_seconds - (time.time() - started)
-                time.sleep(min(60, max(1, int(remain))))
-                if time.time() - last_status >= 60:
-                    _simple_status_tick(target, state_path)
-                    last_status = time.time()
+                time.sleep(transient_backoff_seconds)
     except KeyboardInterrupt:
         print("\n收到中断，已退出保活。", flush=True)
 

@@ -29,5 +29,8 @@ def check_or_refresh(state_path=None):
     valid, response = token.check_token(state_path)
     if valid:
         return False, response
+    # Gateway/network blip: keep existing token, do not re-login into a 502.
+    if isinstance(response, dict) and response.get("transient"):
+        return False, response
     refreshed = refresh_once(state_path)
     return True, {"code": 2000, "msg": "re-login ok", "userId": refreshed.get("userId")}

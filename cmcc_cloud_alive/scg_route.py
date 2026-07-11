@@ -18,6 +18,7 @@ import dataclasses
 import json
 import os
 import socket
+import select
 import ssl
 import struct
 import time
@@ -601,17 +602,6 @@ def spice_handshake(sock: socket.socket, max_wait: float = 12.0) -> Dict[str, ob
                 progress["displayInitSent"] = True
                 wait_display_mark()
 
-    end = time.monotonic() + max_wait
-    while time.monotonic() < end:
-        try:
-            frame = recv_frame_ar(1.0)
-        except Exception:
-            continue
-        if frame.field2 == CHANNEL_DISPLAY and frame.payload:
-            _handle_display_payload(sock, sid, CHANNEL_DISPLAY, frame.payload, progress, stats)
-        if sp.is_protocol_keepalive_success(progress):
-            break
-
     return {
         "session_id": sid,
         "spice_session_id": spice_session_id,
@@ -631,6 +621,64 @@ def _round_seconds(duration: Optional[int]) -> int:
     except Exception:
         return 60
     return value if value > 0 else 0
+
+
+def _scg_probe_socket(sock: socket.socket) -> None:
+    """Non-consuming liveness check via select.select."""
+    try:
+        r, _, _ = select.select([sock], [], [], 0.0)
+    except (ValueError, OSError):
+        raise EOFError("SCG connection lost")
+
+
+def _scg_sleep_drain(sock: socket.socket, interval: float, sid: int, stats: Dict[str, int]) -> None:
+    """Sleep while draining incoming frames via select.select.
+    
+    Mimics Go's readFramesWithTimeout goroutine: prevents TCP receive buffer
+    from filling up by continuously reading frames during the sleep period.
+    """
+    deadline = time.monotonic() + interval
+    while time.monotonic() < deadline:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        chunk = min(1.0, remaining)
+        try:
+            r, _, _ = select.select([sock], [], [], chunk)
+        except (ValueError, OSError):
+            return  # socket closed
+        if not r:
+            continue  # timeout, still within sleep period
+        # Data available - drain available frames
+        try:
+            frames = recv_all_frames(sock, 0.5, 5)
+        except (EOFError, ConnectionError):
+            raise
+        except Exception:
+            frames = []
+        if not frames:
+            continue
+        stats["frames"] = stats.get("frames", 0) + len(frames)
+        for frame in frames:
+            if frame.pkt_type == TRUNK_SWITCH:
+                if len(frame.payload) >= 32:
+                    _target_cid, sender_cid, param, switch_reason, extra_id = struct.unpack(
+                        "<QQIB3xQ", frame.payload[:32]
+                    )
+                    sock.sendall(
+                        trunk_switch_pack(
+                            sender_cid,
+                            sid,
+                            param,
+                            switch_reason,
+                            extra_id,
+                            frame.field1,
+                            frame.field2,
+                        )
+                    )
+                    stats["trunk_switch_replies"] = stats.get("trunk_switch_replies", 0) + 1
+                continue
+            _reply_keepalive_frame(sock, sid, frame, stats)
 
 
 def _send_mouse_mode(sock: socket.socket, sid: int) -> None:
@@ -719,25 +767,15 @@ def _run_once(
                     continue
                 _reply_keepalive_frame(sock, sid, frame, stats)
 
-            if not frames:
-                old_timeout = sock.gettimeout()
-                sock.settimeout(0.5)
-                try:
-                    probe = sock.recv(1)
-                    if probe == b"":
-                        raise EOFError("SCG connection lost")
-                except socket.timeout:
-                    pass
-                finally:
-                    sock.settimeout(old_timeout)
+            _scg_probe_socket(sock)
 
             if duration_seconds > 0:
                 remaining = duration_seconds - (time.monotonic() - started)
                 if remaining <= 0:
                     break
-                time.sleep(min(25.0, remaining))
+                _scg_sleep_drain(sock, min(25.0, remaining), sid, stats)
             else:
-                time.sleep(25.0)
+                _scg_sleep_drain(sock, 25.0, sid, stats)
 
         result["heartbeats"] = heartbeat_count
         result["sohoHeartbeats"] = soho_heartbeat_count
