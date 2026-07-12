@@ -205,7 +205,7 @@ def _int_auto(value):
 def _choose_username_with_cached(cached, prompt_func):
     """Return cached username or a newly entered username via an explicit menu."""
     if not cached:
-        return prompt_func("账号(手机号)")
+        return prompt_func("账号")
     print(f"检测到已缓存账号：{cached}", flush=True)
     print("  1. 继续使用该账号", flush=True)
     print("  2. 重新输入账号", flush=True)
@@ -213,8 +213,8 @@ def _choose_username_with_cached(cached, prompt_func):
     if choice in ("", "1"):
         return cached
     if choice == "2":
-        return prompt_func("账号(手机号)")
-    # 兼容老习惯：用户直接在选择处输入手机号/账号时，也视为切换账号。
+        return prompt_func("账号")
+    # 兼容老习惯：用户直接在选择处输入账号时，也视为切换账号。
     return choice
 
 
@@ -231,7 +231,7 @@ def cmd_login(args):
         password = getpass.getpass("密码(输入不回显)：")
     if not password:
         raise core.CmccError("password is required")
-    # 默认保存密码到项目内 .runtime/state.json，便于 token 失效时自动重登。
+    # 默认保存密码到 ~/.cmcc-cloud-alive/state.json，便于 token 失效时自动重登。
     _password_login_with_retry(username, password, args.state, save_password=(args.save_password or True))
 
 
@@ -1912,13 +1912,21 @@ def build_parser():
         description="移动云电脑保活工具：普通用户直接运行 python3 -m cmcc_cloud_alive，然后按中文提示操作。",
         epilog="常用：python3 -m cmcc_cloud_alive    高级：python3 -m cmcc_cloud_alive interactive --help",
     )
-    parser.add_argument("--state", default=None, help="状态文件路径；默认使用项目内 .runtime/state.json")
+    parser.add_argument(
+        "--state",
+        default=None,
+        help="状态文件路径；默认 ~/.cmcc-cloud-alive/state.json（可用环境变量 CMCC_ALIVE_STATE 覆盖）",
+    )
     sub = parser.add_subparsers(dest="cmd", required=False, metavar="命令")
 
     p = sub.add_parser("login", help="account login; omit password to use hidden prompt")
-    p.add_argument("username", nargs="?", help="account phone number; prompts when omitted")
+    p.add_argument("username", nargs="?", help="account; prompts when omitted")
     p.add_argument("password", nargs="?", help="optional; omit to avoid plaintext shell history")
-    p.add_argument("--save-password", action="store_true", help="兼容参数；当前默认保存到项目内 state 以便 token 失效自动重登")
+    p.add_argument(
+        "--save-password",
+        action="store_true",
+        help="兼容参数；当前默认保存到 ~/.cmcc-cloud-alive/state.json 以便 token 失效自动重登",
+    )
     p.set_defaults(func=cmd_login)
 
     p = sub.add_parser("set-profile")
@@ -2477,6 +2485,12 @@ def _state_label(path):
     return " / ".join(parts) if parts else Path(path).stem
 
 
+def _profiles_dir():
+    """User-local profiles dir (~/.cmcc-cloud-alive/profiles), never project tree."""
+    root = Path(getattr(core, "DEFAULT_PROFILES_DIR", core.DEFAULT_DATA_DIR / "profiles"))
+    return root
+
+
 def _known_state_files(default_state=None):
     files = []
     seen = set()
@@ -2484,11 +2498,18 @@ def _known_state_files(default_state=None):
     if default_state:
         candidates.append(Path(default_state))
     candidates.append(core.state_path(None))
+    # New default location
+    candidates.extend(sorted(_profiles_dir().glob("*.json")))
+    candidates.extend(sorted(core.DEFAULT_DATA_DIR.glob("*.json")))
+    # Legacy project-local paths (read-only discovery; do not create)
     candidates.extend(sorted(Path(".runtime/profiles").glob("*.json")))
     candidates.extend(sorted(Path(".runtime").glob("*.json")))
     for path in candidates:
         path = Path(path)
         if not path.exists():
+            continue
+        # skip KPI / non-state json in data dir
+        if path.name in ("scg_kpi.json",):
             continue
         try:
             key = str(path.resolve())
@@ -2502,13 +2523,15 @@ def _known_state_files(default_state=None):
 
 
 def _next_profile_path():
-    root = Path(".runtime/profiles")
+    root = _profiles_dir()
     root.mkdir(parents=True, exist_ok=True)
     for i in range(1, 1000):
         path = root / f"desktop{i}.json"
         if not path.exists():
             return path
-    raise core.CmccError("保活档案太多，请清理 .runtime/profiles 后再试")
+    raise core.CmccError(
+        f"保活档案太多，请清理 {root} 后再试"
+    )
 
 
 def _choose_state_profile(args):
@@ -2536,10 +2559,10 @@ def _choose_state_profile(args):
         _simple_choice("按回车继续", choices=("1",), default="1")
     label = _simple_input("给这个保活档案起个名字（可直接回车）", default="")
     safe = _safe_profile_name(label)
-    path = Path(".runtime/profiles") / f"{safe}.json" if safe else _next_profile_path()
+    root = _profiles_dir()
+    path = root / f"{safe}.json" if safe else _next_profile_path()
     if path.exists():
         base = _safe_profile_name(path.stem) or "desktop"
-        root = Path(".runtime/profiles")
         for i in range(2, 1000):
             candidate = root / f"{base}-{i}.json"
             if not candidate.exists():

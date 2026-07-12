@@ -187,7 +187,7 @@ login
 
 普通用户不需要打开或修改这些文件。
 
-程序会自动保存到 `.runtime/` 目录。这个目录只在你的电脑本地使用，不应该发给别人，也不应该上传到 GitHub。
+程序会自动保存到你的用户目录 `~/.cmcc-cloud-alive/`（Windows 下为用户主目录下的 `.cmcc-cloud-alive`）。这个目录只在你的电脑本地使用，不应该发给别人，也不应该上传到 GitHub。项目仓库内不再默认写入账号/密码。
 
 ## token 失效了怎么办？
 
@@ -252,12 +252,12 @@ login
 程序会自动生成独立档案，类似：
 
 ```text
-.runtime/profiles/desktop1.json
-.runtime/profiles/desktop2.json
-.runtime/profiles/desktop3.json
+~/.cmcc-cloud-alive/profiles/desktop1.json
+~/.cmcc-cloud-alive/profiles/desktop2.json
+~/.cmcc-cloud-alive/profiles/desktop3.json
 ```
 
-你不需要手动创建这些文件。
+你不需要手动创建这些文件。若本地仍有旧版项目内 `.runtime/profiles/`，启动时仍可被发现并继续使用，但新建档案只会写到 `~/.cmcc-cloud-alive/profiles/`。
 
 ## `.venv` 是什么？为什么要激活？
 
@@ -331,7 +331,8 @@ q
 请不要把下面这些本地文件/目录发给别人：
 
 ```text
-.runtime/
+~/.cmcc-cloud-alive/          # 默认：state.json / profiles/ / scg_kpi.json
+.runtime/                    # 旧版项目内缓存（若仍存在）
 longtest_logs/
 *.log
 cloud_pc*.json
@@ -339,6 +340,11 @@ cloud_pc*.json
 ```
 
 它们可能包含账号缓存、token、密码缓存或运行日志。
+
+说明：
+- `state.json` / `profiles/*.json`：登录会话与密码缓存（敏感）。
+- `scg_kpi.json`：仅 SCG 协议保活的观测计数（心跳/通道/VM 采样等），不含密码；ZTE/CAG 路径没有对等的多通道 SPICE 计数器，因此不写 KPI。
+- 可用环境变量覆盖：`CMCC_ALIVE_STATE`、`CMCC_SCG_KPI`。
 
 正常使用时，你只需要运行程序，不需要打开这些文件。
 

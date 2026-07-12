@@ -18,9 +18,14 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-# Default under package .runtime (same tree as core.DEFAULT_STATE)
-DEFAULT_KPI_DIR = Path(__file__).resolve().parents[1] / ".runtime"
-DEFAULT_KPI_PATH = DEFAULT_KPI_DIR / "scg_kpi.json"
+# SCG-only observability export. ZTE/CAG path has no equivalent multi-channel
+# SPICE counters (WAN-174 / hyscg / channel map), so it does not write KPI.
+# Keep KPI next to credentials under the user-local data dir — never the
+# project tree — so a shared repo checkout cannot leak session metrics paths.
+DEFAULT_KPI_DIR = Path.home() / ".cmcc-cloud-alive"
+DEFAULT_KPI_PATH = Path(
+    os.environ.get("CMCC_SCG_KPI", str(DEFAULT_KPI_DIR / "scg_kpi.json"))
+)
 
 # Channel id names matching scg_route CHANNEL_* constants
 CHANNEL_NAMES = {

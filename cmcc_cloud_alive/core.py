@@ -79,7 +79,11 @@ CLIENT_PROFILES = {
     },
 }
 
-DEFAULT_STATE = Path(__file__).resolve().parents[1] / ".runtime" / "state.json"
+# User-local data dir (NOT the project tree) so credentials never land inside
+# a git working copy that might be zipped/shared/pushed by mistake.
+DEFAULT_DATA_DIR = Path.home() / ".cmcc-cloud-alive"
+DEFAULT_STATE = DEFAULT_DATA_DIR / "state.json"
+DEFAULT_PROFILES_DIR = DEFAULT_DATA_DIR / "profiles"
 SENSITIVE_REPORT_KEYS = {
     "accessToken",
     "authorization",
