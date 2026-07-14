@@ -479,12 +479,19 @@ def _profile_path(profile_id: str) -> Path:
 
 # HARD_GATE#868: same account shares one token/session state (like interactive).
 # Card profile JSON keeps UI meta + selected userServiceId; live child uses acct_*.json.
+# userId/isSubAccount/loginMode MUST sync: checkToken needs X-SOHO-UserId; re-login
+# path uses isSubAccount/loginMode to pick sub vs main password login (4305/90020176).
 _SHARED_ACCOUNT_KEYS = (
     "username",
     "password",
     "passwordSavedAt",
     "sohoToken",
     "token",
+    "userId",
+    "phone",
+    "isSubAccount",
+    "loginMode",
+    "isLogined",
     "deviceId",
     "device_id",
     "clientProfile",
