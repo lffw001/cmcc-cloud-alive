@@ -116,7 +116,8 @@
     const msg = u.message || "";
     const next = u.nextStep || "";
     const map = {
-      PROFILE_IN_USE: "该账号已在保活中，请先停止再启动",
+      PROFILE_IN_USE: "该卡片已在保活中，请先停止再启动",
+      USID_IN_USE: "该桌面已在另一张卡保活中，请先停止那张卡再启动",
       VALIDATION: "填写有误，请检查账号、密码或配置",
       NOT_FOUND: "账号不存在或已删除",
       UNAUTHORIZED: "未授权，请检查访问令牌",
@@ -139,7 +140,8 @@
         base = "账号或密码错误（上游已拒绝）";
       }
     } else if (msg && typeof msg === "string") {
-      if (/PROFILE_IN_USE/i.test(msg)) base = map.PROFILE_IN_USE;
+      if (/USID_IN_USE/i.test(msg)) base = map.USID_IN_USE;
+      else if (/PROFILE_IN_USE/i.test(msg)) base = map.PROFILE_IN_USE;
       else if (/LIVE_DISABLED/i.test(msg)) base = map.LIVE_DISABLED;
       else if (/AUTH_REQUIRED/i.test(msg)) base = map.AUTH_REQUIRED;
       else if (/LOGIN_REQUIRED/i.test(msg)) base = map.LOGIN_REQUIRED;
@@ -993,9 +995,9 @@
       (busy ? "disabled" : "") +
       (open ? ' aria-expanded="true"' : ' aria-expanded="false"') +
       ">配置</button>" +
-      '<button type="button" class="btn btn-ghost" data-act="clear-thread" ' +
+      '<button type="button" class="btn btn-ghost" data-act="refresh-logs" ' +
       (busy ? "disabled" : "") +
-      ' title="停止并清除该账号当前保活线程（本地编排，不调用上游桌面登出）">清除线程</button>' +
+      ' title="清空本卡片日志显示（不影响保活任务）">刷新日志</button>' +
       '<button type="button" class="btn btn-ghost" data-act="clear-logs" ' +
       (busy ? "disabled" : "") +
       ">清空日志</button>" +
@@ -1747,6 +1749,24 @@ function setComposerMsg(text, kind) {
     }
   }
 
+  function onRefreshLogs(pid) {
+    // Card button: clear local log display only; does NOT stop job / logout.
+    if (!pid) return;
+    state.logs = state.logs || {};
+    state.logs[pid] = [];
+    state._logClearedAt = state._logClearedAt || {};
+    state._logClearedAt[pid] = Date.now();
+    try { applyLogsToDom(pid, true); } catch (_e) {}
+    if (state.logModalPid === pid) {
+      const full =
+        document.querySelector("#log-full-body") ||
+        document.querySelector("#log-modal-body");
+      if (full) full.textContent = "";
+    }
+    toast("已刷新日志");
+    pushGlobal("[" + pid + "] 已刷新日志显示");
+  }
+
   async function onClearThread(pid) {
     // Card button: stop/clear local keepalive worker for this profile.
     // Replaces upstream desktop-logout; user evidence shows orphan local
@@ -1760,7 +1780,7 @@ function setComposerMsg(text, kind) {
       "清除线程",
       "确定清除「" +
         name +
-        "」的当前保活线程？仅停止本机编排任务，不会调用上游桌面登出，账号登录态保留。",
+        "」的当前保活线程？将先调用桌面登出释放远端会话，再停止本机任务；账号登录态保留。",
       "确定清除"
     );
     if (!ok) return;
@@ -2635,7 +2655,8 @@ function setComposerMsg(text, kind) {
       else if (act === "delete") onDelete(pid);
       else if (act === "desktops") onDesktops(pid);
       else if (act === "login") onConfigLogin(pid);
-      else if (act === "desktop-logout" || act === "clear-thread") onClearThread(pid);
+      else if (act === "desktop-logout") onClearThread(pid);
+      else if (act === "refresh-logs" || act === "clear-thread") onRefreshLogs(pid);
       else if (act === "clear-logs") {
         // HARD_GATE#853: real backend clear (not FE-only fake clear)
         if (!pid) return;

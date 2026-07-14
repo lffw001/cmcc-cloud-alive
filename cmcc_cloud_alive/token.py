@@ -1,7 +1,12 @@
 """SOHO token validity checks."""
 
+import fcntl
+import os
 import re
+import threading
 import time
+from contextlib import contextmanager
+from pathlib import Path
 
 from . import auth, core
 
@@ -24,6 +29,13 @@ _TRANSIENT_HINTS = (
     "gateway time",
 )
 
+# HARD_GATE#871d-relogin-serial1: same-account re-login flock.
+# Multiple live children may share acct_<user>.json; concurrent password_login
+# invalidates the peer token (4015 thrash). Serialize re-login by username and
+# re-check after lock so the waiter adopts the winner's token without re-login.
+_RELOGIN_LOCK_TIMEOUT_S = 90.0
+_tls = threading.local()
+
 
 def is_transient_error(exc_or_msg) -> bool:
     """Return True for gateway/network blips that say nothing about token validity."""
@@ -43,6 +55,111 @@ def _token_response_from_exc(exc):
         "businessCode": "",
         "transient": is_transient_error(exc),
     }
+
+
+def account_key(username: str) -> str:
+    """Normalize phone/username for same-account re-login flock key."""
+    s = str(username or "").strip()
+    if not s:
+        return ""
+    digits = "".join(ch for ch in s if ch.isdigit())
+    if len(digits) >= 11:
+        return digits[-11:]
+    out = []
+    for ch in s.lower():
+        if ch.isalnum() or ch in ("-", "_", "."):
+            out.append(ch)
+        else:
+            out.append("_")
+    return "".join(out) or "unknown"
+
+
+def _held_keys():
+    keys = getattr(_tls, "keys", None)
+    if keys is None:
+        keys = set()
+        _tls.keys = keys
+    return keys
+
+
+def _locks_dir() -> Path:
+    """Prefer durable data root (profiles sibling), fall back to ~/.cmcc-cloud-alive/locks."""
+    env = (os.environ.get("CMCC_ALIVE_DATA") or "").strip()
+    if env:
+        return Path(env) / "locks"
+    try:
+        sp = core.state_path(None)
+        if sp.parent.name == "profiles":
+            return sp.parent.parent / "locks"
+        return sp.parent / "locks"
+    except Exception:
+        return Path.home() / ".cmcc-cloud-alive" / "locks"
+
+
+def relogin_lock_path(username: str) -> Path:
+    key = account_key(username) or "unknown"
+    return _locks_dir() / f"relogin_{key}.lock"
+
+
+@contextmanager
+def account_relogin_lock(username: str, timeout_s: float = _RELOGIN_LOCK_TIMEOUT_S):
+    """Cross-process exclusive lock for same-account re-login (reentrant in-process)."""
+    key = account_key(username)
+    if not key:
+        yield
+        return
+    held = _held_keys()
+    if key in held:
+        yield
+        return
+
+    path = relogin_lock_path(username)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(str(path), os.O_CREAT | os.O_RDWR, 0o600)
+    deadline = time.time() + max(1.0, float(timeout_s or _RELOGIN_LOCK_TIMEOUT_S))
+    locked = False
+    try:
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                locked = True
+                break
+            except BlockingIOError:
+                if time.time() >= deadline:
+                    raise core.CmccError(
+                        f"account re-login lock busy for {key} after {timeout_s}s"
+                    )
+                time.sleep(0.2)
+        try:
+            os.ftruncate(fd, 0)
+            os.write(fd, f"{os.getpid()}\n".encode("ascii", "replace"))
+        except OSError:
+            pass
+        held.add(key)
+        try:
+            yield
+        finally:
+            held.discard(key)
+    finally:
+        if locked:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+            except OSError:
+                pass
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+
+
+def _state_token_fingerprint(state: dict) -> str:
+    if not isinstance(state, dict):
+        return ""
+    for k in ("sohoToken", "token", "accessToken", "Authorization"):
+        v = state.get(k)
+        if v:
+            return str(v)
+    return ""
 
 
 def check_token(state_path=None, retries=3, retry_delay=1.5):
@@ -96,6 +213,14 @@ def check_token(state_path=None, retries=3, retry_delay=1.5):
 
 
 def ensure_token(state_path=None, relogin=True):
+    """Ensure token is valid; on expiry serialize re-login by account.
+
+    HARD_GATE#871d-relogin-serial1:
+    1) check_token
+    2) if invalid + relogin: flock by username
+    3) under lock: reload state; if sohoToken changed, re-check and adopt
+    4) still invalid: login_from_cached_credentials (holds same lock re-entrantly)
+    """
     valid, response = check_token(state_path)
     if valid:
         return True, response
@@ -104,5 +229,46 @@ def ensure_token(state_path=None, relogin=True):
         return False, response
     if not relogin:
         return False, response
-    state = auth.login_from_cached_credentials(state_path)
-    return True, {"code": 2000, "msg": "re-login ok", "userId": state.get("userId")}
+
+    args = core.argparse.Namespace(state=state_path)
+    state = core.load_state(args)
+    username = (
+        (state or {}).get("username")
+        or (state or {}).get("phone")
+        or (state or {}).get("mobile")
+        or (state or {}).get("account")
+        or ""
+    )
+    if not username:
+        state = auth.login_from_cached_credentials(state_path)
+        return True, {"code": 2000, "msg": "re-login ok", "userId": state.get("userId")}
+
+    before_fp = _state_token_fingerprint(state)
+    with account_relogin_lock(str(username)):
+        # Peer may have just written a fresh token into the shared state file.
+        state2 = core.load_state(args)
+        after_fp = _state_token_fingerprint(state2)
+        if after_fp and after_fp != before_fp:
+            valid2, response2 = check_token(state_path)
+            if valid2:
+                return True, {
+                    "code": 2000,
+                    "msg": "adopted peer re-login token",
+                    "userId": (state2 or {}).get("userId"),
+                    "adopted": True,
+                    "prior": response,
+                    "check": response2,
+                }
+        # Token unchanged or still invalid — we are the re-login owner.
+        valid3, response3 = check_token(state_path)
+        if valid3:
+            return True, response3
+        if isinstance(response3, dict) and response3.get("transient"):
+            return False, response3
+        state = auth.login_from_cached_credentials(state_path)
+        return True, {
+            "code": 2000,
+            "msg": "re-login ok",
+            "userId": state.get("userId"),
+            "adopted": False,
+        }

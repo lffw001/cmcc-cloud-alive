@@ -137,6 +137,32 @@ def _live_creds_from_state(state_path: Path) -> Dict[str, str]:
     return out
 
 
+
+def _account_key_from_state(state_path: Path) -> str:
+    """Normalize phone/username for same-account SCG first-connect serial gate."""
+    try:
+        data = json.loads(Path(state_path).read_text(encoding="utf-8"))
+    except Exception:
+        return ""
+    if not isinstance(data, dict):
+        return ""
+    raw = (
+        data.get("username")
+        or data.get("phone")
+        or data.get("mobile")
+        or data.get("account")
+        or ""
+    )
+    s = str(raw).strip()
+    if not s:
+        return ""
+    # digits-only phone form when possible
+    digits = "".join(ch for ch in s if ch.isdigit())
+    if len(digits) >= 11:
+        return digits[-11:]
+    return s.lower()
+
+
 class FakeBackend:
     """In-process dry-run backend: mirrors simple-keepalive interactive lines."""
 
@@ -513,6 +539,10 @@ class Orchestrator:
         self._lock = threading.RLock()
         self._jobs: Dict[str, Dict[str, Any]] = {}
         self._by_profile: Dict[str, str] = {}
+        # userServiceId -> job_id (same desktop must not stack across cards)
+        self._by_usid: Dict[str, str] = {}
+        # same-account SCG first-connect serial: accountKey -> {jobId, t0}
+        self._account_scg_gate: Dict[str, Dict[str, Any]] = {}
         self._log_buffers: Dict[str, List[Dict[str, str]]] = {}
         self._last_log_line: Dict[str, str] = {}
         self._subscribers: List[asyncio.Queue] = []
@@ -735,10 +765,67 @@ class Orchestrator:
             mode = "live"
 
         state_path = Path(state_path)
+
+        # HARD_GATE#871d-acct-serial1: same-account SCG live first-connect serial.
+        # HARD_GATE#871d-relogin-serial1: token/auth same-account re-login flock (see token.py).
+        # Dual-card same login thrash platform session if MAIN_INIT races; stagger ~75s.
+        # dry-run / ZTE skip. Blocks caller thread (app must asyncio.to_thread).
+        account_key = ""
+        if protocol == "SCG" and mode == "live":
+            account_key = _account_key_from_state(state_path)
+            if account_key:
+                serial_sec = float(os.environ.get("CMCC_SCG_ACCOUNT_SERIAL_SEC", "75") or "75")
+                if serial_sec < 0:
+                    serial_sec = 0.0
+                # wait until previous same-account SCG job's first-connect window ends
+                while serial_sec > 0:
+                    wait_more = 0.0
+                    with self._lock:
+                        gate = self._account_scg_gate.get(account_key)
+                        if not gate:
+                            break
+                        other_jid = str(gate.get("jobId") or "")
+                        t0 = float(gate.get("t0") or 0.0)
+                        other = self._jobs.get(other_jid) if other_jid else None
+                        elapsed = time.time() - t0 if t0 else serial_sec
+                        # free gate if other gone / not running / window elapsed
+                        if (
+                            not other
+                            or other.get("status") not in ("running", "pending")
+                            or elapsed >= serial_sec
+                        ):
+                            if gate is self._account_scg_gate.get(account_key):
+                                # only drop if still same gate entry
+                                if not other or other.get("status") not in ("running", "pending"):
+                                    self._account_scg_gate.pop(account_key, None)
+                            break
+                        # same profile re-entry handled by PROFILE_IN_USE later
+                        if other and other.get("profileId") == profile_id:
+                            break
+                        wait_more = min(serial_sec - elapsed, 1.0)
+                        if wait_more <= 0:
+                            break
+                    if wait_more > 0:
+                        time.sleep(wait_more)
+                    else:
+                        break
+
         with self._lock:
             existing = self._by_profile.get(profile_id)
             if existing and self._jobs.get(existing, {}).get("status") == "running":
                 raise RuntimeError("PROFILE_IN_USE")
+
+            usid = (user_service_id or "").strip()
+            if usid:
+                old_jid = self._by_usid.get(usid)
+                old_job = self._jobs.get(old_jid) if old_jid else None
+                if (
+                    old_job
+                    and old_job.get("status") == "running"
+                    and old_job.get("profileId") != profile_id
+                ):
+                    # Strategy 1: refuse stack same desktop on another card
+                    raise RuntimeError("USID_IN_USE")
 
             job_id = uuid.uuid4().hex[:12]
             job = {
@@ -763,9 +850,20 @@ class Orchestrator:
                 "durationSec": duration_sec,
                 "backend": "fake" if mode == "dry-run" else "subprocess",
                 "exitCode": None,
+                "userServiceId": usid or None,
             }
             self._jobs[job_id] = job
             self._by_profile[profile_id] = job_id
+            if usid:
+                self._by_usid[usid] = job_id
+            if account_key:
+                job["accountKey"] = account_key
+                if protocol == "SCG" and mode == "live":
+                    self._account_scg_gate[account_key] = {
+                        "jobId": job_id,
+                        "t0": time.time(),
+                        "profileId": profile_id,
+                    }
             self._log_buffers.setdefault(job_id, [])
             stop_evt = threading.Event()
             self._stop_events[job_id] = stop_evt
@@ -812,6 +910,13 @@ class Orchestrator:
                     j["status"] = "error"
                     j["stoppedAt"] = _now_iso()
                     j["detail"] = f"start failed: {e}"
+                    fail_usid = (j.get("userServiceId") or "").strip()
+                    if fail_usid and self._by_usid.get(fail_usid) == job_id:
+                        self._by_usid.pop(fail_usid, None)
+                    fail_ak = (j.get("accountKey") or "").strip()
+                    gate = self._account_scg_gate.get(fail_ak) if fail_ak else None
+                    if gate and gate.get("jobId") == job_id:
+                        self._account_scg_gate.pop(fail_ak, None)
                 self._stop_events.pop(job_id, None)
             self._append_log(job_id, f"[orch] start failed: {e}")
             self._emit(
@@ -826,9 +931,10 @@ class Orchestrator:
             )
             raise
 
+        ak_note = f" account={account_key}" if account_key else ""
         self._append_log(
             job_id,
-            f"[orch] start protocol={protocol} mode={mode} state={state_path.name}",
+            f"[orch] start protocol={protocol} mode={mode} state={state_path.name}{ak_note}",
         )
         self._emit(
             "job_status",
@@ -852,6 +958,29 @@ class Orchestrator:
                 return dict(job)
             backend = self._backends.get(jid)
             stop_evt = self._stop_events.get(jid)
+            usid = (job.get("userServiceId") or "").strip()
+            state_path = job.get("statePath")
+
+        # Graceful remote release BEFORE local SIGTERM (stop/clear buttons).
+        # Local kill alone can leave SOHO/SCG ghost sessions → MAIN_INIT missing.
+        if usid and state_path:
+            try:
+                from cmcc_cloud_alive import logout as logout_mod
+
+                self._append_log(
+                    jid,
+                    f"[orch] stop: desktop_logout before kill usid={usid}",
+                )
+                logout_mod.desktop_logout(
+                    user_service_id=usid,
+                    state_path=str(state_path),
+                )
+                self._append_log(jid, "[orch] stop: desktop_logout ok")
+            except Exception as e:
+                self._append_log(
+                    jid,
+                    f"[orch] stop: desktop_logout failed (continue kill): {e}",
+                )
 
         if stop_evt is not None:
             stop_evt.set()
@@ -918,6 +1047,13 @@ class Orchestrator:
             if exit_code is not None:
                 job["exitCode"] = exit_code
             profile_id = job.get("profileId")
+            usid = (job.get("userServiceId") or "").strip()
+            if usid and self._by_usid.get(usid) == job_id:
+                self._by_usid.pop(usid, None)
+            ak = (job.get("accountKey") or "").strip()
+            gate = self._account_scg_gate.get(ak) if ak else None
+            if gate and gate.get("jobId") == job_id:
+                self._account_scg_gate.pop(ak, None)
             out = dict(job)
             self._backends.pop(job_id, None)
             self._stop_events.pop(job_id, None)

@@ -725,7 +725,7 @@ async def system_info(request: Request) -> JSONResponse:
             "profilesDir": str(profiles_dir()),
             "cliCallable": True,  # package present; not probing LIVE
             # Footer: "服务 cmcc-cloud-alive · v{version}" — align with WebUI baseline id.
-            "version": "0.1.0-webui-871d-dual-err1",
+            "version": "0.1.0-webui-871d-relogin-serial1",
             "tokenRequired": bool(os.environ.get("CMCC_WEBUI_TOKEN")),
             "orchestrator": type(ORCH).__name__,
         }
@@ -1392,7 +1392,7 @@ async def profiles_start_job(request: Request) -> JSONResponse:
     except Exception:
         pass
     try:
-        job = ORCH.start_job(
+        job = await asyncio.to_thread(ORCH.start_job,
             pid,
             live_path,
             protocol=protocol,
@@ -1406,7 +1406,7 @@ async def profiles_start_job(request: Request) -> JSONResponse:
     except TypeError:
         # older orchestrator signature: pass extra_args only, merge fields on response
         try:
-            job = ORCH.start_job(
+            job = await asyncio.to_thread(ORCH.start_job,
                 pid, live_path, protocol=protocol, mode=mode, extra_args=timing["extraArgs"],
                 user_service_id=str(usid) if usid else None,
             )
@@ -1418,6 +1418,12 @@ async def profiles_start_job(request: Request) -> JSONResponse:
         except RuntimeError as e:
             if str(e) == "PROFILE_IN_USE":
                 return api_error("PROFILE_IN_USE", "profile already has a running job", 409)
+            if str(e) == "USID_IN_USE":
+                return api_error(
+                    "USID_IN_USE",
+                    "desktop userServiceId already has a running job on another card",
+                    409,
+                )
             return api_error("VALIDATION", str(e))
         except ValueError as e:
             return api_error("VALIDATION", str(e))
@@ -1425,6 +1431,12 @@ async def profiles_start_job(request: Request) -> JSONResponse:
     except RuntimeError as e:
         if str(e) == "PROFILE_IN_USE":
             return api_error("PROFILE_IN_USE", "profile already has a running job", 409)
+        if str(e) == "USID_IN_USE":
+            return api_error(
+                "USID_IN_USE",
+                "desktop userServiceId already has a running job on another card",
+                409,
+            )
         return api_error("VALIDATION", str(e))
     except ValueError as e:
         return api_error("VALIDATION", str(e))
@@ -1758,7 +1770,7 @@ async def jobs_create(request: Request) -> JSONResponse:
     except ValueError as e:
         return api_error("VALIDATION", str(e))
     try:
-        job = ORCH.start_job(
+        job = await asyncio.to_thread(ORCH.start_job,
             str(pid),
             path,
             protocol=protocol,
@@ -1770,7 +1782,7 @@ async def jobs_create(request: Request) -> JSONResponse:
         )
     except TypeError:
         try:
-            job = ORCH.start_job(
+            job = await asyncio.to_thread(ORCH.start_job,
                 str(pid),
                 path,
                 protocol=protocol,
@@ -1785,6 +1797,12 @@ async def jobs_create(request: Request) -> JSONResponse:
         except RuntimeError as e:
             if str(e) == "PROFILE_IN_USE":
                 return api_error("PROFILE_IN_USE", "profile already has a running job", 409)
+            if str(e) == "USID_IN_USE":
+                return api_error(
+                    "USID_IN_USE",
+                    "desktop userServiceId already has a running job on another card",
+                    409,
+                )
             return api_error("VALIDATION", str(e))
         except ValueError as e:
             return api_error("VALIDATION", str(e))
@@ -1792,6 +1810,12 @@ async def jobs_create(request: Request) -> JSONResponse:
     except RuntimeError as e:
         if str(e) == "PROFILE_IN_USE":
             return api_error("PROFILE_IN_USE", "profile already has a running job", 409)
+        if str(e) == "USID_IN_USE":
+            return api_error(
+                "USID_IN_USE",
+                "desktop userServiceId already has a running job on another card",
+                409,
+            )
         return api_error("VALIDATION", str(e))
     except ValueError as e:
         return api_error("VALIDATION", str(e))
