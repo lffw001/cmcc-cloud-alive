@@ -371,29 +371,37 @@
     const newIn = $("#token-modal-new");
     if (curIn) curIn.value = cur;
     if (newIn) newIn.value = "";
+    const authOn = !!(state.authEnabled || state.tokenRequired);
     const st = $("#token-modal-status");
     if (st) {
-      if (state.authEnabled || state.tokenRequired) {
+      if (authOn) {
         st.textContent =
           "服务器鉴权：已启用" +
           (state.authSource ? "（" + state.authSource + "）" : "") +
-          (cur ? " · 本机已保存密钥" : " · 本机无密钥");
+          (cur ? " · 本机已保存密钥" : " · 本机无密钥") +
+          "。改密请填「新密钥」。";
       } else {
-        st.textContent = "服务器鉴权：已关闭（空密钥开放访问）。可在下方启用新密钥。";
+        st.textContent =
+          "服务器鉴权：已关闭。" +
+          (cur
+            ? "本机已有密钥，点「启用密钥」即可打开服务器鉴权（不必再填新密钥）。"
+            : "在「当前密钥」填入要启用的密钥后点「启用密钥」；若要换成别的再填「新密钥」并用「修改密钥」。");
       }
     }
-    const authOn = !!(state.authEnabled || state.tokenRequired);
+    // 两个按钮始终可见：启用=开鉴权；修改=改成新密钥
     const enBtn = $("#token-modal-enable");
     const chBtn = $("#token-modal-change");
     if (enBtn) {
-      enBtn.hidden = authOn;
-      enBtn.style.display = authOn ? "none" : "";
-      enBtn.disabled = authOn;
+      enBtn.hidden = false;
+      enBtn.style.display = "";
+      enBtn.disabled = authOn; // 已启用时只能改密/关闭
+      enBtn.title = authOn ? "服务器已启用鉴权，请用「修改密钥」或先关闭鉴权" : "用「当前密钥」启用服务器鉴权";
     }
     if (chBtn) {
-      chBtn.hidden = !authOn;
-      chBtn.style.display = authOn ? "" : "none";
-      chBtn.disabled = !authOn;
+      chBtn.hidden = false;
+      chBtn.style.display = "";
+      chBtn.disabled = false;
+      chBtn.title = authOn ? "校验当前密钥后写入新密钥" : "写入新密钥并启用服务器鉴权";
     }
     setTokenModalErr("");
   }
@@ -403,23 +411,33 @@
     const curIn = $("#token-modal-current");
     const newIn = $("#token-modal-new");
     const cur = ((curIn && curIn.value) || getToken() || "").trim();
-    const t = ((newIn && newIn.value) || "").trim();
-    if (!t || t.length < 4 || /\s/.test(t)) {
-      setTokenModalErr("新密钥至少 4 位且无空格");
-      return;
-    }
+    const tNew = ((newIn && newIn.value) || "").trim();
     const authOn = !!(state.authEnabled || state.tokenRequired);
-    if (mode === "enable" && authOn) {
-      setTokenModalErr("服务器已启用鉴权，请用「修改密钥」");
-      return;
-    }
-    if (mode === "change" && !authOn) {
-      setTokenModalErr("服务器尚未启用鉴权，请用「启用密钥」");
-      return;
-    }
-    if (mode === "change" && !cur) {
-      setTokenModalErr("修改密钥需要填写当前密钥");
-      return;
+
+    // 启用 = 打开服务器鉴权：优先用「当前密钥」/本机已存密钥，不要求填新密钥
+    // 修改 = 改成「新密钥」（鉴权已开时要校验当前密钥；未开时等同设定并启用）
+    let writeToken = "";
+    if (mode === "enable") {
+      if (authOn) {
+        setTokenModalErr("服务器已启用鉴权，请用「修改密钥」或先「关闭服务器鉴权」");
+        return;
+      }
+      writeToken = cur;
+      if (!writeToken || writeToken.length < 4 || /\s/.test(writeToken)) {
+        setTokenModalErr("启用鉴权请在「当前密钥」填入至少 4 位无空格密钥（本机已保存会自动填充）");
+        return;
+      }
+    } else {
+      // change
+      writeToken = tNew;
+      if (!writeToken || writeToken.length < 4 || /\s/.test(writeToken)) {
+        setTokenModalErr("修改密钥请在「新密钥」填入至少 4 位无空格密钥");
+        return;
+      }
+      if (authOn && !cur) {
+        setTokenModalErr("修改密钥需要填写当前密钥");
+        return;
+      }
     }
     try {
       await api("/api/auth/change", {
@@ -427,18 +445,18 @@
         body: JSON.stringify({
           currentToken: cur || undefined,
           oldToken: cur || undefined,
-          newToken: t,
-          token: t,
+          newToken: writeToken,
+          token: writeToken,
         }),
       });
-      setToken(t);
+      setToken(writeToken);
       state.tokenRequired = true;
       state.authEnabled = true;
       state.setupRequired = false;
       updateTokenBtn();
       hideTokenModal();
-      toast(mode === "enable" ? "服务器访问密钥已启用" : "服务器访问密钥已修改");
-      pushGlobal(mode === "enable" ? "访问密钥已启用" : "访问密钥已修改");
+      toast(mode === "enable" ? "服务器访问鉴权已启用" : "服务器访问密钥已修改");
+      pushGlobal(mode === "enable" ? "访问鉴权已启用" : "访问密钥已修改");
       await refreshAuthStatus();
     } catch (e) {
       setTokenModalErr(humanError(e, mode === "enable" ? "启用密钥失败" : "修改密钥失败"));
@@ -635,29 +653,37 @@ async function submitGateLogin() {
     const newIn = $("#token-modal-new");
     if (curIn) curIn.value = cur;
     if (newIn) newIn.value = "";
+    const authOn = !!(state.authEnabled || state.tokenRequired);
     const st = $("#token-modal-status");
     if (st) {
-      if (state.authEnabled || state.tokenRequired) {
+      if (authOn) {
         st.textContent =
           "服务器鉴权：已启用" +
           (state.authSource ? "（" + state.authSource + "）" : "") +
-          (cur ? " · 本机已保存密钥" : " · 本机无密钥");
+          (cur ? " · 本机已保存密钥" : " · 本机无密钥") +
+          "。改密请填「新密钥」。";
       } else {
-        st.textContent = "服务器鉴权：已关闭（空密钥开放访问）。可在下方启用新密钥。";
+        st.textContent =
+          "服务器鉴权：已关闭。" +
+          (cur
+            ? "本机已有密钥，点「启用密钥」即可打开服务器鉴权（不必再填新密钥）。"
+            : "在「当前密钥」填入要启用的密钥后点「启用密钥」；若要换成别的再填「新密钥」并用「修改密钥」。");
       }
     }
-    const authOn = !!(state.authEnabled || state.tokenRequired);
+    // 两个按钮始终可见：启用=开鉴权；修改=改成新密钥
     const enBtn = $("#token-modal-enable");
     const chBtn = $("#token-modal-change");
     if (enBtn) {
-      enBtn.hidden = authOn;
-      enBtn.style.display = authOn ? "none" : "";
-      enBtn.disabled = authOn;
+      enBtn.hidden = false;
+      enBtn.style.display = "";
+      enBtn.disabled = authOn; // 已启用时只能改密/关闭
+      enBtn.title = authOn ? "服务器已启用鉴权，请用「修改密钥」或先关闭鉴权" : "用「当前密钥」启用服务器鉴权";
     }
     if (chBtn) {
-      chBtn.hidden = !authOn;
-      chBtn.style.display = authOn ? "" : "none";
-      chBtn.disabled = !authOn;
+      chBtn.hidden = false;
+      chBtn.style.display = "";
+      chBtn.disabled = false;
+      chBtn.title = authOn ? "校验当前密钥后写入新密钥" : "写入新密钥并启用服务器鉴权";
     }
     setTokenModalErr("");
   }
@@ -667,23 +693,33 @@ async function submitGateLogin() {
     const curIn = $("#token-modal-current");
     const newIn = $("#token-modal-new");
     const cur = ((curIn && curIn.value) || getToken() || "").trim();
-    const t = ((newIn && newIn.value) || "").trim();
-    if (!t || t.length < 4 || /\s/.test(t)) {
-      setTokenModalErr("新密钥至少 4 位且无空格");
-      return;
-    }
+    const tNew = ((newIn && newIn.value) || "").trim();
     const authOn = !!(state.authEnabled || state.tokenRequired);
-    if (mode === "enable" && authOn) {
-      setTokenModalErr("服务器已启用鉴权，请用「修改密钥」");
-      return;
-    }
-    if (mode === "change" && !authOn) {
-      setTokenModalErr("服务器尚未启用鉴权，请用「启用密钥」");
-      return;
-    }
-    if (mode === "change" && !cur) {
-      setTokenModalErr("修改密钥需要填写当前密钥");
-      return;
+
+    // 启用 = 打开服务器鉴权：优先用「当前密钥」/本机已存密钥，不要求填新密钥
+    // 修改 = 改成「新密钥」（鉴权已开时要校验当前密钥；未开时等同设定并启用）
+    let writeToken = "";
+    if (mode === "enable") {
+      if (authOn) {
+        setTokenModalErr("服务器已启用鉴权，请用「修改密钥」或先「关闭服务器鉴权」");
+        return;
+      }
+      writeToken = cur;
+      if (!writeToken || writeToken.length < 4 || /\s/.test(writeToken)) {
+        setTokenModalErr("启用鉴权请在「当前密钥」填入至少 4 位无空格密钥（本机已保存会自动填充）");
+        return;
+      }
+    } else {
+      // change
+      writeToken = tNew;
+      if (!writeToken || writeToken.length < 4 || /\s/.test(writeToken)) {
+        setTokenModalErr("修改密钥请在「新密钥」填入至少 4 位无空格密钥");
+        return;
+      }
+      if (authOn && !cur) {
+        setTokenModalErr("修改密钥需要填写当前密钥");
+        return;
+      }
     }
     try {
       await api("/api/auth/change", {
@@ -691,18 +727,18 @@ async function submitGateLogin() {
         body: JSON.stringify({
           currentToken: cur || undefined,
           oldToken: cur || undefined,
-          newToken: t,
-          token: t,
+          newToken: writeToken,
+          token: writeToken,
         }),
       });
-      setToken(t);
+      setToken(writeToken);
       state.tokenRequired = true;
       state.authEnabled = true;
       state.setupRequired = false;
       updateTokenBtn();
       hideTokenModal();
-      toast(mode === "enable" ? "服务器访问密钥已启用" : "服务器访问密钥已修改");
-      pushGlobal(mode === "enable" ? "访问密钥已启用" : "访问密钥已修改");
+      toast(mode === "enable" ? "服务器访问鉴权已启用" : "服务器访问密钥已修改");
+      pushGlobal(mode === "enable" ? "访问鉴权已启用" : "访问密钥已修改");
       await refreshAuthStatus();
     } catch (e) {
       setTokenModalErr(humanError(e, mode === "enable" ? "启用密钥失败" : "修改密钥失败"));
@@ -843,10 +879,14 @@ async function submitGateLogin() {
     const input = document.getElementById(inputId);
     if (!btn || !input || btn.dataset.bound) return;
     btn.dataset.bound = "1";
+    // token-modal 用短文案；向导/门控保持「显示密钥」
+    const short = String(btnId || "").indexOf("token-modal-show") === 0;
     const setLabel = function (visible) {
-      btn.textContent = visible ? "隐藏密钥" : "显示密钥";
+      const hideTxt = short ? "隐藏" : "隐藏密钥";
+      const showTxt = short ? "显示" : "显示密钥";
+      btn.textContent = visible ? hideTxt : showTxt;
       btn.setAttribute("aria-pressed", visible ? "true" : "false");
-      btn.setAttribute("aria-label", visible ? "隐藏密钥" : "显示密钥");
+      btn.setAttribute("aria-label", visible ? hideTxt : showTxt);
     };
     setLabel(input.type !== "password");
     btn.addEventListener("click", function () {

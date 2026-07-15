@@ -212,23 +212,33 @@ def check_token(state_path=None, retries=3, retry_delay=1.5):
     return valid, response
 
 
-def ensure_token(state_path=None, relogin=True):
+def ensure_token(state_path=None, relogin=True, force=False):
     """Ensure token is valid; on expiry serialize re-login by account.
 
     HARD_GATE#871d-relogin-serial1:
-    1) check_token
+    1) check_token (skipped when force=True)
     2) if invalid + relogin: flock by username
     3) under lock: reload state; if sohoToken changed, re-check and adopt
-    4) still invalid: login_from_cached_credentials (holds same lock re-entrantly)
+    4) still invalid (or force): login_from_cached_credentials
+
+    force=True is for business APIs (getFirmAuth / listClouds) that return
+    4015 while checkToken still claims valid — checkToken alone is not proof
+    that control-plane calls will succeed.
     """
-    valid, response = check_token(state_path)
-    if valid:
-        return True, response
-    # Gateway blip: keep existing token, do not re-login into the same 502.
-    if isinstance(response, dict) and response.get("transient"):
-        return False, response
-    if not relogin:
-        return False, response
+    response = None
+    if not force:
+        valid, response = check_token(state_path)
+        if valid:
+            return True, response
+        # Gateway blip: keep existing token, do not re-login into the same 502.
+        if isinstance(response, dict) and response.get("transient"):
+            return False, response
+        if not relogin:
+            return False, response
+    else:
+        if not relogin:
+            return False, {"code": 4015, "msg": "force re-login disabled"}
+        response = {"code": 4015, "msg": "business auth expired (force re-login)"}
 
     args = core.argparse.Namespace(state=state_path)
     state = core.load_state(args)
@@ -241,7 +251,12 @@ def ensure_token(state_path=None, relogin=True):
     )
     if not username:
         state = auth.login_from_cached_credentials(state_path)
-        return True, {"code": 2000, "msg": "re-login ok", "userId": state.get("userId")}
+        return True, {
+            "code": 2000,
+            "msg": "re-login ok",
+            "userId": state.get("userId"),
+            "forced": bool(force),
+        }
 
     before_fp = _state_token_fingerprint(state)
     with account_relogin_lock(str(username)):
@@ -256,19 +271,24 @@ def ensure_token(state_path=None, relogin=True):
                     "msg": "adopted peer re-login token",
                     "userId": (state2 or {}).get("userId"),
                     "adopted": True,
+                    "forced": bool(force),
                     "prior": response,
                     "check": response2,
                 }
-        # Token unchanged or still invalid — we are the re-login owner.
-        valid3, response3 = check_token(state_path)
-        if valid3:
-            return True, response3
-        if isinstance(response3, dict) and response3.get("transient"):
-            return False, response3
+        if not force:
+            # Token unchanged or still invalid — we are the re-login owner.
+            valid3, response3 = check_token(state_path)
+            if valid3:
+                return True, response3
+            if isinstance(response3, dict) and response3.get("transient"):
+                return False, response3
+        # force=True always re-logs when peer did not supply a fresher token;
+        # checkToken can lie (valid) while firmAuth/listClouds still return 4015.
         state = auth.login_from_cached_credentials(state_path)
         return True, {
             "code": 2000,
             "msg": "re-login ok",
             "userId": state.get("userId"),
             "adopted": False,
+            "forced": bool(force),
         }

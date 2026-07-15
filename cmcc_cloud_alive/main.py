@@ -2846,12 +2846,48 @@ def _simple_refresh_token_if_needed(state_path, context="账号token检测"):
         return False
 
 
+def _is_auth_expired_error(err):
+    """True when control-plane returned INVALID_TOKEN_CODES (e.g. 4015)."""
+    resp = getattr(err, "response", None)
+    if isinstance(resp, dict):
+        try:
+            code = int(resp.get("code") or 0)
+        except (TypeError, ValueError):
+            code = 0
+        if code in token.INVALID_TOKEN_CODES:
+            return True
+    text = str(err or "")
+    if "code=4015" in text or "用户未登录" in text:
+        return True
+    for c in token.INVALID_TOKEN_CODES:
+        if f"code={c}" in text:
+            return True
+    return False
+
+
 def _simple_status_tick(target, state_path):
     try:
         snap = cloud.status(target, state_path)
         state_text = "开机运行中" if cloud.is_running(snap) else "已关机"
         print(f"[{core.short_time()}] 云桌面状态：{state_text}", flush=True)
     except Exception as err:
+        if _is_auth_expired_error(err):
+            print(
+                f"[{core.short_time()}] 每分钟状态检测鉴权失效（{err}），强制重登后重试一次",
+                flush=True,
+            )
+            try:
+                token.ensure_token(state_path, relogin=True, force=True)
+                snap = cloud.status(target, state_path)
+                state_text = "开机运行中" if cloud.is_running(snap) else "已关机"
+                print(f"[{core.short_time()}] 云桌面状态：{state_text}", flush=True)
+                return
+            except Exception as retry_err:  # noqa: BLE001
+                print(
+                    f"[{core.short_time()}] 每分钟状态检测失败（重登后仍失败）：{retry_err}",
+                    flush=True,
+                )
+                return
         print(f"[{core.short_time()}] 每分钟状态检测失败：{err}", flush=True)
 
 
@@ -2910,12 +2946,36 @@ def _simple_forced_keepalive(target, state_path, protocol, traffic_seconds):
     try:
         auth = core.get_firm_auth(ns_args)
     except Exception as exc:  # noqa: BLE001 - gate must report, not crash
-        report["error"] = str(exc)
-        report["stage"] = "%s-firmAuth-failed" % str(protocol or "").lower()
-        report["nextStep"] = "fix login/account/firmAuth; selected protocol was not changed automatically"
-        report["duration"] = round(time.monotonic() - started, 3)
-        _emit_product_report(args, report)
-        return report
+        # checkToken can claim valid while getFirmAuth returns 4015; force re-login once.
+        if _is_auth_expired_error(exc):
+            print(
+                f"[{core.short_time()}] {protocol} firmAuth 鉴权失效（{exc}），"
+                f"强制重登后重试 firmAuth 一次",
+                flush=True,
+            )
+            try:
+                token.ensure_token(state_path, relogin=True, force=True)
+                auth = core.get_firm_auth(ns_args)
+                report["sessionRefresh"] = True
+            except Exception as retry_exc:  # noqa: BLE001
+                report["error"] = str(retry_exc)
+                report["stage"] = "%s-firmAuth-failed" % str(protocol or "").lower()
+                report["nextStep"] = (
+                    "re-login / check account password; firmAuth still 4015 after force re-login"
+                )
+                report["duration"] = round(time.monotonic() - started, 3)
+                report["sessionRefresh"] = False
+                _emit_product_report(args, report)
+                return report
+        else:
+            report["error"] = str(exc)
+            report["stage"] = "%s-firmAuth-failed" % str(protocol or "").lower()
+            report["nextStep"] = (
+                "fix login/account/firmAuth; selected protocol was not changed automatically"
+            )
+            report["duration"] = round(time.monotonic() - started, 3)
+            _emit_product_report(args, report)
+            return report
 
     route = product_router.classify_firm_auth_route(auth)
     route.userServiceId = str(selected or "")

@@ -866,7 +866,7 @@ async def system_info(request: Request) -> JSONResponse:
             "profilesDir": str(profiles_dir()),
             "cliCallable": True,  # package present; not probing LIVE
             # Footer: "服务 cmcc-cloud-alive · v{version}" — align with WebUI baseline id.
-            "version": "0.1.0-webui-871d-access-gate15",
+            "version": "0.1.0-webui-871d-access-gate17",
             "tokenRequired": bool(expected),
             # gate6: empty token = open access; setup is optional (not forced)
             "setupRequired": False,
@@ -890,7 +890,7 @@ async def auth_status(request: Request) -> JSONResponse:
             "tokenRequired": bool(expected),
             "authEnabled": bool(expected),
             "authenticated": authed,
-            "version": "0.1.0-webui-871d-access-gate15",
+            "version": "0.1.0-webui-871d-access-gate17",
         }
     )
 

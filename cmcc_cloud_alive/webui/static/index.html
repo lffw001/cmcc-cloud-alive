@@ -6,7 +6,7 @@
   <title>爱家移动云电脑</title>
   <meta name="color-scheme" content="light" />
   <link rel="icon" type="image/png" href="/static/logo.png?v=869a" />
-  <link rel="stylesheet" href="/static/app.css?v=871d-access-gate15" />
+  <link rel="stylesheet" href="/static/app.css?v=871d-access-gate17" />
 </head>
 <body>
   <!-- Access gate (8317-style): setup / login before console -->
@@ -287,33 +287,33 @@
         <h2 id="token-modal-title">访问密钥</h2>
         <button type="button" class="btn btn-ghost modal-x" id="token-modal-close" aria-label="关闭" title="关闭">×</button>
       </div>
-      <p class="token-modal-status" id="token-modal-status">正在读取鉴权状态…</p>
+      <p class="token-modal-status" id="token-modal-status">读取鉴权中…</p>
       <div class="token-modal-field">
-        <label for="token-modal-current">当前密钥（改密/关鉴权时需要）</label>
+        <label for="token-modal-current">当前密钥</label>
         <div class="field-row">
           <input type="password" id="token-modal-current" autocomplete="current-password" placeholder="本机已保存则自动填充" />
-          <button type="button" class="btn btn-ghost btn-sm" id="token-modal-show-current" aria-pressed="false" title="显示或隐藏密钥">显示密钥</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="token-modal-show-current" aria-pressed="false" title="显示或隐藏密钥">显示</button>
         </div>
       </div>
       <div class="token-modal-field">
-        <label for="token-modal-new">新密钥（启用/改密）</label>
+        <label for="token-modal-new">新密钥（修改时填）</label>
         <div class="field-row">
-          <input type="password" id="token-modal-new" autocomplete="new-password" placeholder="至少 4 位，无空格" />
-          <button type="button" class="btn btn-ghost btn-sm" id="token-modal-show-new" aria-pressed="false" title="显示或隐藏密钥">显示密钥</button>
+          <input type="password" id="token-modal-new" autocomplete="new-password" placeholder="≥4 位，无空格" />
+          <button type="button" class="btn btn-ghost btn-sm" id="token-modal-show-new" aria-pressed="false" title="显示或隐藏密钥">显示</button>
         </div>
       </div>
       <div class="token-modal-actions">
         <button type="button" class="btn btn-primary" id="token-modal-enable">启用密钥</button>
         <button type="button" class="btn btn-primary" id="token-modal-change">修改密钥</button>
-        <button type="button" class="btn" id="token-modal-clear">仅清除本机密钥</button>
-        <button type="button" class="btn btn-danger" id="token-modal-disable">关闭服务器鉴权</button>
+        <button type="button" class="btn" id="token-modal-clear">清除本机</button>
+        <button type="button" class="btn btn-danger" id="token-modal-disable">关闭鉴权</button>
       </div>
       <p class="token-modal-err" id="token-modal-err" role="alert"></p>
-      <p class="token-modal-note">关闭鉴权后任何人可操作；「仅清除本机」只删浏览器保存的密钥。</p>
+      <p class="token-modal-note">启用=用当前密钥开鉴权；修改需填新密钥。关闭后任何人可操作；清除本机仅删浏览器保存的密钥。</p>
     </div>
   </div>
 
   <div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
-  <script src="/static/app.js?v=871d-access-gate15"></script>
+  <script src="/static/app.js?v=871d-access-gate17"></script>
 </body>
 </html>
