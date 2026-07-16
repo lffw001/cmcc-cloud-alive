@@ -1,8 +1,8 @@
 """SOHO token validity checks."""
 
-import fcntl
 import os
 import re
+import sys
 import threading
 import time
 from contextlib import contextmanager
@@ -33,8 +33,47 @@ _TRANSIENT_HINTS = (
 # Multiple live children may share acct_<user>.json; concurrent password_login
 # invalidates the peer token (4015 thrash). Serialize re-login by username and
 # re-check after lock so the waiter adopts the winner's token without re-login.
+# fcntl is Unix-only — Windows uses msvcrt.locking (see _lock_fd/_unlock_fd).
 _RELOGIN_LOCK_TIMEOUT_S = 90.0
 _tls = threading.local()
+_IS_WIN = sys.platform.startswith("win")
+
+
+def _lock_fd(fd: int) -> None:
+    """Non-blocking exclusive lock; raise BlockingIOError if busy."""
+    if _IS_WIN:
+        import msvcrt
+
+        # msvcrt.locking locks by byte range; lock 1 byte from start.
+        # LK_NBLCK = non-blocking; raises OSError if already locked.
+        try:
+            os.lseek(fd, 0, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+        except OSError as exc:
+            # Windows: errno 13/36 when region already locked
+            raise BlockingIOError(exc.errno, str(exc)) from exc
+    else:
+        import fcntl
+
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
+def _unlock_fd(fd: int) -> None:
+    if _IS_WIN:
+        import msvcrt
+
+        try:
+            os.lseek(fd, 0, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+        except OSError:
+            pass
+    else:
+        import fcntl
+
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        except OSError:
+            pass
 
 
 def is_transient_error(exc_or_msg) -> bool:
@@ -115,13 +154,20 @@ def account_relogin_lock(username: str, timeout_s: float = _RELOGIN_LOCK_TIMEOUT
 
     path = relogin_lock_path(username)
     path.parent.mkdir(parents=True, exist_ok=True)
+    # Windows msvcrt.locking needs a non-empty region; ensure ≥1 byte exists.
     fd = os.open(str(path), os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        if os.fstat(fd).st_size < 1:
+            os.write(fd, b"0")
+            os.lseek(fd, 0, os.SEEK_SET)
+    except OSError:
+        pass
     deadline = time.time() + max(1.0, float(timeout_s or _RELOGIN_LOCK_TIMEOUT_S))
     locked = False
     try:
         while True:
             try:
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                _lock_fd(fd)
                 locked = True
                 break
             except BlockingIOError:
@@ -131,8 +177,15 @@ def account_relogin_lock(username: str, timeout_s: float = _RELOGIN_LOCK_TIMEOUT
                     )
                 time.sleep(0.2)
         try:
-            os.ftruncate(fd, 0)
-            os.write(fd, f"{os.getpid()}\n".encode("ascii", "replace"))
+            # Stamp pid without emptying the file first (Windows msvcrt needs
+            # a non-empty locked region for the duration of the lock).
+            data = f"{os.getpid()}\n".encode("ascii", "replace") or b"0\n"
+            os.lseek(fd, 0, os.SEEK_SET)
+            os.write(fd, data)
+            try:
+                os.ftruncate(fd, len(data))
+            except OSError:
+                pass
         except OSError:
             pass
         held.add(key)
@@ -142,10 +195,7 @@ def account_relogin_lock(username: str, timeout_s: float = _RELOGIN_LOCK_TIMEOUT
             held.discard(key)
     finally:
         if locked:
-            try:
-                fcntl.flock(fd, fcntl.LOCK_UN)
-            except OSError:
-                pass
+            _unlock_fd(fd)
         try:
             os.close(fd)
         except OSError:
