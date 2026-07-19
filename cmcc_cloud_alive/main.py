@@ -7,7 +7,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import account_keepalive, auth, cag_boot, cag_keepalive, cloud, core, desktop_keepalive, logout, mqtt_keepalive, power_monitor, probe, product_pin, product_router, protocol_runner, rap_zime, spice_protocol, strategy, token, trace_timeline, verified_run, zime_native_bridge, zime_probe
+from . import account_keepalive, auth, cag_boot, cag_keepalive, cloud, core, desktop_keepalive, logout, mqtt_keepalive, power_monitor, power_on, probe, product_pin, product_router, protocol_runner, rap_zime, spice_protocol, strategy, token, trace_timeline, verified_run, zime_native_bridge, zime_probe
 
 
 def _print(obj):
@@ -3026,35 +3026,32 @@ def _simple_run_keepalive(target, state_path, protocol, interval_minutes, traffi
     if cloud.is_running(pre_snap):
         print("[首次开机检查] 云电脑已运行，跳过开机，马上进入第一轮保活。", flush=True)
     else:
-        if str(protocol).upper() == "SCG":
-            print("[首次开机检查] 云电脑未运行，当前选择SCG协议，将由getConnectInfo自动触发开机（无需二次确认）。", flush=True)
-        else:
-            print("[首次开机检查] 云电脑未运行，自动开机（只执行这一次，无需二次确认）……", flush=True)
-            try:
-                cag_boot.ensure_running(target, state_path, boot_wait=180, timeout=30, refresh_wait=5)
-            except Exception as boot_err:
-                if _is_auth_expired_error(boot_err):
-                    print(
-                        f"[首次开机检查] 开机鉴权失效（{boot_err}），强制重登后重试开机一次",
-                        flush=True,
-                    )
-                    try:
-                        token.ensure_token(state_path, relogin=True, force=True)
-                        cag_boot.ensure_running(
-                            target, state_path, boot_wait=180, timeout=30, refresh_wait=5
-                        )
-                    except Exception as boot_retry_err:  # noqa: BLE001
-                        print(
-                            f"[首次开机检查] 首次状态检测/开机失败，任务终止，不进入保活：{boot_retry_err}",
-                            flush=True,
-                        )
-                        return
-                else:
-                    print(
-                        f"[首次开机检查] 首次状态检测/开机失败，任务终止，不进入保活：{boot_err}",
-                        flush=True,
-                    )
-                    return
+        # L0 real power-on: protocol-required, branch-exclusive (ZTE startDesktop / SCG getConnectInfo).
+        # Never cag_boot.connectDesktop as fake power; never fall-through to L1 when not running.
+        print(
+            f"[首次开机检查] 云电脑未运行，L0真开机 protocol={protocol}（无需二次确认）……",
+            flush=True,
+        )
+        try:
+            boot_res = power_on.ensure_powered_on(
+                target, state_path, protocol, boot_wait=180, timeout=30
+            )
+        except Exception as boot_err:  # noqa: BLE001
+            print(
+                f"[首次开机检查] 首次状态检测/开机失败，任务终止，不进入保活：{boot_err}",
+                flush=True,
+            )
+            return
+        if not boot_res.get("ok"):
+            print(
+                f"[首次开机检查] L0开机失败 result={boot_res.get('result')} "
+                f"branch={boot_res.get('branch')} error={boot_res.get('error')}，"
+                f"任务终止，不进入保活",
+                flush=True,
+            )
+            return
+        post_snap = boot_res.get("status")
+        if post_snap is None:
             try:
                 post_snap = _simple_cloud_status_with_force_retry(
                     target, state_path, context="首次开机后状态"
@@ -3065,11 +3062,15 @@ def _simple_run_keepalive(target, state_path, protocol, interval_minutes, traffi
                     flush=True,
                 )
                 return
-            if cloud.is_running(post_snap):
-                print("[首次开机检查] 开机流程完成，马上进入第一轮保活。", flush=True)
-            else:
-                print("[首次开机检查] 首次状态检测/开机失败，任务终止，不进入保活", flush=True)
-                return
+        if cloud.is_running(post_snap):
+            print(
+                f"[首次开机检查] 开机流程完成 result={boot_res.get('result')} "
+                f"branch={boot_res.get('branch')}，马上进入第一轮保活。",
+                flush=True,
+            )
+        else:
+            print("[首次开机检查] 首次状态检测/开机失败，任务终止，不进入保活", flush=True)
+            return
     try:
         disc = desktop_keepalive.disconnect_time(target, state_path)
         _print_disconnect_time(disc)
@@ -3118,7 +3119,8 @@ def _simple_run_keepalive(target, state_path, protocol, interval_minutes, traffi
                     time.sleep(transient_backoff_seconds)
                     continue
                 # Forever mode: if cloud auto-powered-off (~30min idle), re-boot
-                # before the next keepalive so multi-hour product stays online.
+                # via L0 real power-on (protocol branch) before L1 keepalive.
+                # Failure MUST continue (skip L1); never fall-through on exception.
                 if int(mode) == 2:
                     try:
                         snap = _simple_cloud_status_with_force_retry(
@@ -3127,35 +3129,56 @@ def _simple_run_keepalive(target, state_path, protocol, interval_minutes, traffi
                         )
                         if not cloud.is_running(snap):
                             print(
-                                f"[{core.short_time()}] 第{round_no}轮：云电脑未运行，自动开机……",
+                                f"[{core.short_time()}] 第{round_no}轮：云电脑未运行，"
+                                f"L0真开机 protocol={protocol}……",
                                 flush=True,
                             )
-                            cag_boot.ensure_running(
-                                target, state_path,
-                                boot_wait=180, timeout=30, refresh_wait=5,
+                            boot_res = power_on.ensure_powered_on(
+                                target, state_path, protocol,
+                                boot_wait=180, timeout=30,
                             )
-                            post = _simple_cloud_status_with_force_retry(
-                                target, state_path,
-                                context=f"第{round_no}轮开机后状态",
-                            )
-                            if not cloud.is_running(post):
+                            post = boot_res.get("status")
+                            if post is None:
+                                try:
+                                    post = _simple_cloud_status_with_force_retry(
+                                        target, state_path,
+                                        context=f"第{round_no}轮开机后状态",
+                                    )
+                                except Exception:
+                                    post = None
+                            if not (post is not None and cloud.is_running(post)):
+                                backoff = transient_backoff_seconds
+                                if (
+                                    boot_res.get("soft")
+                                    or boot_res.get("result")
+                                    == power_on.RESULT_SOFT_FAILURE
+                                ):
+                                    # Maintenance / 104: longer backoff, stay in mode2
+                                    backoff = max(backoff, 300)
                                 print(
-                                    f"[{core.short_time()}] 第{round_no}轮开机未就绪，"
-                                    f"{transient_backoff_seconds}s后重试",
+                                    f"[{core.short_time()}] 第{round_no}轮L0开机未就绪 "
+                                    f"result={boot_res.get('result')} "
+                                    f"error={boot_res.get('error')}，"
+                                    f"{backoff}s后重试（本轮不进L1）",
                                     flush=True,
                                 )
-                                time.sleep(transient_backoff_seconds)
+                                time.sleep(backoff)
                                 continue
                             print(
-                                f"[{core.short_time()}] 第{round_no}轮开机完成，继续保活",
+                                f"[{core.short_time()}] 第{round_no}轮开机完成 "
+                                f"result={boot_res.get('result')} "
+                                f"branch={boot_res.get('branch')}，继续保活",
                                 flush=True,
                             )
                     except Exception as boot_err:  # noqa: BLE001
+                        # HARD GATE: do NOT fall through to L1 on L0 exception
                         print(
                             f"[{core.short_time()}] 第{round_no}轮开机检测/开机失败"
-                            f"（将继续尝试保活）：{boot_err}",
+                            f"（本轮跳过L1，{transient_backoff_seconds}s后重试）：{boot_err}",
                             flush=True,
                         )
+                        time.sleep(transient_backoff_seconds)
+                        continue
                 # Start round timing only after all pre-flight checks are done.
                 # Token refresh/re-login time must not consume the user-configured
                 # keepalive traffic duration or the configured round interval.
