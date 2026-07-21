@@ -1557,9 +1557,33 @@ def _run_zte_keepalive(args, auth, route, vm_id, report, started):
 
     firm = None
     material = None
+    # Sticky edge: after first success, lock material branch in state so
+    # subsequent runs / redials skip HTTP edge probe (and avoid CAG2↔IAG thrash).
+    # Bypass: CCK_ZTE_FORCE_PROBE=1 (also honored inside run_material).
+    sticky_edge = ""
+    try:
+        st0 = core.load_state(getattr(args, "state", None))
+        sticky_blob = st0.get("zte_sticky") if isinstance(st0, dict) else None
+        if isinstance(sticky_blob, dict):
+            sticky_edge = str(sticky_blob.get("edge_kind") or "").strip()
+    except Exception:
+        sticky_edge = ""
+    if sticky_edge:
+        print(
+            "[%s] ZTE sticky edge=%s (skip probe; CCK_ZTE_FORCE_PROBE=1 to reset)"
+            % (core.short_time(), sticky_edge),
+            flush=True,
+        )
+
     try:
         firm = zte_route.ZTEFirmAuth.from_auth_dict(auth)
-        material = zte_route.run_material(firm, target_vm_id=vm_id)
+        material = zte_route.run_material(
+            firm,
+            target_vm_id=vm_id,
+            skip_edge_probe=bool(sticky_edge),
+            preferred_edge_kind=sticky_edge,
+            cag2_allow_async=False,
+        )
         # Same-round one-shot retry: session invalid → ensure_token → firmAuth → material.
         if (not material.ok) and _zte_session_invalid(material.error):
             report["stage"] = "zte-session-refresh"
@@ -1588,7 +1612,13 @@ def _run_zte_keepalive(args, auth, route, vm_id, report, started):
                 )
                 auth = core.get_firm_auth(ns_args)
                 firm = zte_route.ZTEFirmAuth.from_auth_dict(auth)
-                material = zte_route.run_material(firm, target_vm_id=vm_id)
+                material = zte_route.run_material(
+                    firm,
+                    target_vm_id=vm_id,
+                    skip_edge_probe=bool(sticky_edge),
+                    preferred_edge_kind=sticky_edge,
+                    cag2_allow_async=False,
+                )
                 report["sessionRefresh"] = True
             except Exception as retry_exc:  # noqa: BLE001 - surface refresh failure
                 report["error"] = "1000100 retry failed: %s" % retry_exc
@@ -1608,7 +1638,57 @@ def _run_zte_keepalive(args, auth, route, vm_id, report, started):
     report["stage"] = md.get("stage") or "zte-keepalive"
     report["error"] = md.get("error") or ""
     report["nextStep"] = md.get("nextStep") or ""
+    # Edge auto-detect labels (IAG-material | CAG2.0-edge); transport paths unchanged.
+    if md.get("edgeKind"):
+        report["edgeKind"] = md.get("edgeKind")
+    if md.get("ztePath"):
+        report["ztePath"] = md.get("ztePath")
     report["duration"] = round(time.monotonic() - started, 3)
+
+    # Persist sticky edge after first successful material (write-disk lock).
+    if material.ok and getattr(material, "edge_kind", None):
+        try:
+            import time as _time
+            edge_k = str(material.edge_kind or "").strip()
+            # Infer transport label for human diagnostics (not used for routing).
+            transport = ""
+            try:
+                if material.connect_str:
+                    from .zte_connect_params import (
+                        decode_connect_params, inner_from_connect_params,
+                    )
+                    from .zte_cag import uses_raw_ztec_path
+                    _cp0 = decode_connect_params(material.connect_str)
+                    _in0 = inner_from_connect_params(_cp0)
+                    transport = "IPv6-raw-ZTEC" if uses_raw_ztec_path(_in0) else "IPv4-CAGMux"
+            except Exception:
+                transport = ""
+            if edge_k.upper().startswith("CAG2"):
+                transport = transport or "CAG2.0-connectDesktop"
+            core.merge_state(
+                {
+                    "zte_sticky": {
+                        "edge_kind": edge_k,
+                        "transport": transport,
+                        "zte_path": str(getattr(material, "zte_path", "") or ""),
+                        "ts": int(_time.time()),
+                    }
+                },
+                getattr(args, "state", None),
+            )
+            sticky_edge = edge_k
+            report["zteSticky"] = {"edge_kind": edge_k, "transport": transport}
+            print(
+                "[%s] ZTE sticky saved edge=%s transport=%s"
+                % (core.short_time(), edge_k, transport or "-"),
+                flush=True,
+            )
+        except Exception as sticky_exc:  # noqa: BLE001 - non-fatal
+            print(
+                "[%s] ZTE sticky save failed (non-fatal): %s"
+                % (core.short_time(), sticky_exc),
+                flush=True,
+            )
 
     # --- P6–P9: full CAG → mux → raw-SPICE keepalive session ---
     if material.ok and material.connect_str:
@@ -1633,6 +1713,9 @@ def _run_zte_keepalive(args, auth, route, vm_id, report, started):
             counters = zte_route.run_zte_keepalive_session(
                 firm, material.connect_str, duration=duration,
                 auth_template_hex=auth_template_hex,
+                preferred_edge_kind=sticky_edge or str(
+                    getattr(material, "edge_kind", "") or ""
+                ),
             )
             report["stage"] = "zte-keepalive-done"
             report["keepalive"] = counters
@@ -3032,9 +3115,12 @@ def _simple_run_keepalive(target, state_path, protocol, interval_minutes, traffi
             f"[首次开机检查] 云电脑未运行，L0真开机 protocol={protocol}（无需二次确认）……",
             flush=True,
         )
+        # SCG getConnectInfo: 120–160s/req + limited retries (power_on default 140).
+        # mode2 + softFailure: warn and enter keepalive (aligns with L0 design);
+        # mode1 / hardFailure: still abort first-boot gate.
         try:
             boot_res = power_on.ensure_powered_on(
-                target, state_path, protocol, boot_wait=180, timeout=30
+                target, state_path, protocol, boot_wait=180, timeout=140
             )
         except Exception as boot_err:  # noqa: BLE001
             print(
@@ -3043,34 +3129,62 @@ def _simple_run_keepalive(target, state_path, protocol, interval_minutes, traffi
             )
             return
         if not boot_res.get("ok"):
-            print(
-                f"[首次开机检查] L0开机失败 result={boot_res.get('result')} "
-                f"branch={boot_res.get('branch')} error={boot_res.get('error')}，"
-                f"任务终止，不进入保活",
-                flush=True,
+            is_soft = bool(
+                boot_res.get("soft")
+                or boot_res.get("result") == power_on.RESULT_SOFT_FAILURE
             )
-            return
-        post_snap = boot_res.get("status")
-        if post_snap is None:
-            try:
-                post_snap = _simple_cloud_status_with_force_retry(
-                    target, state_path, context="首次开机后状态"
-                )
-            except Exception as post_err:
+            if int(mode) == 2 and is_soft:
                 print(
-                    f"[首次开机检查] 首次状态检测/开机失败，任务终止，不进入保活：{post_err}",
+                    f"[首次开机检查] L0 softFailure result={boot_res.get('result')} "
+                    f"branch={boot_res.get('branch')} error={boot_res.get('error')}，"
+                    f"mode2 不终止，警告后进入保活（后续轮次将重试开机）",
+                    flush=True,
+                )
+            else:
+                print(
+                    f"[首次开机检查] L0开机失败 result={boot_res.get('result')} "
+                    f"branch={boot_res.get('branch')} error={boot_res.get('error')}，"
+                    f"任务终止，不进入保活",
                     flush=True,
                 )
                 return
-        if cloud.is_running(post_snap):
-            print(
-                f"[首次开机检查] 开机流程完成 result={boot_res.get('result')} "
-                f"branch={boot_res.get('branch')}，马上进入第一轮保活。",
-                flush=True,
-            )
         else:
-            print("[首次开机检查] 首次状态检测/开机失败，任务终止，不进入保活", flush=True)
-            return
+            post_snap = boot_res.get("status")
+            if post_snap is None:
+                try:
+                    post_snap = _simple_cloud_status_with_force_retry(
+                        target, state_path, context="首次开机后状态"
+                    )
+                except Exception as post_err:
+                    if int(mode) == 2:
+                        print(
+                            f"[首次开机检查] 开机后状态刷新失败（mode2 警告后进入保活）：{post_err}",
+                            flush=True,
+                        )
+                    else:
+                        print(
+                            f"[首次开机检查] 首次状态检测/开机失败，任务终止，不进入保活：{post_err}",
+                            flush=True,
+                        )
+                        return
+            if post_snap is not None and cloud.is_running(post_snap):
+                print(
+                    f"[首次开机检查] 开机流程完成 result={boot_res.get('result')} "
+                    f"branch={boot_res.get('branch')}，马上进入第一轮保活。",
+                    flush=True,
+                )
+            elif int(mode) == 2 and (
+                boot_res.get("soft")
+                or boot_res.get("result") == power_on.RESULT_SOFT_FAILURE
+            ):
+                print(
+                    f"[首次开机检查] L0 未确认 running（soft）result={boot_res.get('result')} "
+                    f"error={boot_res.get('error')}，mode2 不终止，警告后进入保活",
+                    flush=True,
+                )
+            else:
+                print("[首次开机检查] 首次状态检测/开机失败，任务终止，不进入保活", flush=True)
+                return
     try:
         disc = desktop_keepalive.disconnect_time(target, state_path)
         _print_disconnect_time(disc)
@@ -3135,7 +3249,7 @@ def _simple_run_keepalive(target, state_path, protocol, interval_minutes, traffi
                             )
                             boot_res = power_on.ensure_powered_on(
                                 target, state_path, protocol,
-                                boot_wait=180, timeout=30,
+                                boot_wait=180, timeout=140,
                             )
                             post = boot_res.get("status")
                             if post is None:

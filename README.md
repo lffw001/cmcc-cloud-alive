@@ -24,6 +24,42 @@
 - token 失效时，会用已保存的账号密码自动重新登录并继续保活（沿用你上次的主/子登录方式）。
 - 支持一个账号多台云电脑、多账号多开（CLI 多终端 / WebUI 多卡片）。
 
+## 已实现的保活协议（技术说明）
+
+用户侧仍只选 **`ZTE` 或 `SCG`**。下面是程序内部实际落地的链路（给会看日志/排障的人）：
+
+### 用户可见：两种协议
+
+| 你选的 | 走什么 |
+|---|---|
+| **ZTE（中兴）** | 中兴 CAG 材料面 + 数据面保活（见下表分流） |
+| **SCG（深信服）** | 深信服 CEM / SPICE 保活（`get_connect_info` 等） |
+
+程序**不会**在 ZTE / SCG 之间自动改你的选择。
+
+### ZTE 内部三条路径（一次分流，不是串行试错）
+
+进入 ZTE 后，先判定**边沿网关**，再用 connectStr 里主机地址决定数据面：
+
+| 内部路径 | 何时走 | 控制面（拿 connectStr） | 数据面（保活流量） | 备注 |
+|---|---|---|---|---|
+| **CAG2.0** | Edge / sticky 为 `CAG2.0` | `getAccessToken` → **`connectDesktop` 一次** | CAG 拨号（mux 或 raw，随 host） | **默认不走** 旧 IAG 的 async 轮询（CAG2 上会 404） |
+| **IAG + IPv4** | Edge 为 IAG，内层主机 IPv4 | 旧 getToken → desktop → start（必要时 async） | 常见 **TLS / CAG mux + SPICE** | 传统中兴路径 |
+| **IAG + IPv6** | Edge 为 IAG，内层主机 IPv6 | 与 IAG 材料相同 | **明文 raw ZTEC**（非 TLS） | 与 IPv4 **禁止混改**帧格式 |
+
+要点：
+
+1. **不是**「先试 CAG2 → 再 IPv4 → 再 IPv6」。是一次 edge 判定 + 地址族锁定。
+2. **Sticky 边沿**：某次 material 成功后，会把 `edge_kind` 写入本地 state（`zte_sticky`），后续默认**跳过** HTTP edge 探测，减少 CAG2↔IAG 抖动。需要强制重探时设环境变量 `CCK_ZTE_FORCE_PROBE=1`。
+3. **重拨只换 connectStr**，不改已选定的 dial/帧类型。
+4. 云电脑关机时的 **L0 真开机**：ZTE 走 `cs_startDesktop` 材料链；SCG 走 `get_connect_info`（含等待就绪）。与「保活数据面」是两层逻辑。
+
+### SCG 侧
+
+- 协议栈：深信服 CEM 控制面 + SPICE 保活通道（与官方客户端同族思路）。
+- 冷启动 / 平台慢路径：控制面 `getConnectInfo` 单次超时默认约 **140s**（可恢复错误有限次重试），降低「已开机但 connect 超时」误杀。
+- CLI `--forever`：维护打断 / CEM 502 时软恢复（重拉 connect-info 续连），详见下文「官方维护」小节。
+
 ## 使用前需要准备什么？
 
 按你选的路径准备：

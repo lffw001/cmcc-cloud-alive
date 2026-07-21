@@ -283,6 +283,25 @@ def _power_on_zte(
     )
 
 
+# SCG CEM getConnectInfo can stall on cold boot / platform slow path.
+# Per-request budget 120–160s (default 140); limited retries on recoverable errors.
+_SCG_CONNECT_TIMEOUT_DEFAULT = 140.0
+_SCG_CONNECT_TIMEOUT_MIN = 120.0
+_SCG_CONNECT_TIMEOUT_MAX = 160.0
+_SCG_CONNECT_ATTEMPTS = 3  # 1 initial + 2 retries on recoverable/timeout
+
+
+def _scg_connect_timeout(timeout: float) -> float:
+    """Clamp SCG control-plane per-request timeout into [120, 160] unless explicitly lower test value."""
+    t = float(timeout)
+    # Preserve short timeouts used by unit tests (e.g. boot_wait=1 style harnesses).
+    if t > 0 and t < _SCG_CONNECT_TIMEOUT_MIN:
+        return t
+    if t <= 0:
+        return _SCG_CONNECT_TIMEOUT_DEFAULT
+    return max(_SCG_CONNECT_TIMEOUT_MIN, min(_SCG_CONNECT_TIMEOUT_MAX, t))
+
+
 def _power_on_scg(
     target: str,
     state_path: Any,
@@ -327,24 +346,57 @@ def _power_on_scg(
     except Exception:
         device_id = ""
 
-    try:
-        # get_connect_info triggers SCG VM boot; wait_vm_ready is inside when needed
-        connect_info = scg_route.get_connect_info(
-            sc_auth_code,
-            vm_id,
-            device_id=device_id,
-            timeout=float(timeout),
+    req_timeout = _scg_connect_timeout(timeout)
+    connect_info: Dict[str, Any] = {}
+    last_exc: Optional[BaseException] = None
+    last_tags: Dict[str, Any] = {}
+    for attempt in range(1, _SCG_CONNECT_ATTEMPTS + 1):
+        try:
+            # get_connect_info triggers SCG VM boot; wait_vm_ready is inside when needed
+            connect_info = scg_route.get_connect_info(
+                sc_auth_code,
+                vm_id,
+                device_id=device_id,
+                timeout=req_timeout,
+            )
+            last_exc = None
+            break
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            last_tags = scg_route.classify_scg_soft_failure(exc)
+            soft = bool(
+                last_tags.get("recoverable") or last_tags.get("platform_maintenance")
+            )
+            if not soft or attempt >= _SCG_CONNECT_ATTEMPTS:
+                return _result(
+                    RESULT_SOFT_FAILURE if soft else RESULT_HARD_FAILURE,
+                    protocol="SCG",
+                    branch=branch,
+                    error="get_connect_info failed: %s" % exc,
+                    soft=soft,
+                    detail={
+                        "scgTags": last_tags,
+                        "attempts": attempt,
+                        "timeout": req_timeout,
+                    },
+                )
+            # Recoverable/timeout: brief backoff then retry
+            time.sleep(min(5.0 * attempt, 15.0))
+    if last_exc is not None:
+        soft = bool(
+            last_tags.get("recoverable") or last_tags.get("platform_maintenance")
         )
-    except Exception as exc:  # noqa: BLE001
-        tags = scg_route.classify_scg_soft_failure(exc)
-        soft = bool(tags.get("recoverable") or tags.get("platform_maintenance"))
         return _result(
             RESULT_SOFT_FAILURE if soft else RESULT_HARD_FAILURE,
             protocol="SCG",
             branch=branch,
-            error="get_connect_info failed: %s" % exc,
+            error="get_connect_info failed: %s" % last_exc,
             soft=soft,
-            detail={"scgTags": tags},
+            detail={
+                "scgTags": last_tags,
+                "attempts": _SCG_CONNECT_ATTEMPTS,
+                "timeout": req_timeout,
+            },
         )
 
     status = _poll_running(target, state_path, boot_wait=boot_wait)
@@ -387,7 +439,7 @@ def ensure_powered_on(
     protocol,
     *,
     boot_wait: float = 180,
-    timeout: float = 30,
+    timeout: float = _SCG_CONNECT_TIMEOUT_DEFAULT,
     poll_interval: float = 5.0,  # reserved / documented; used via _poll_running default
 ) -> Dict[str, Any]:
     """Ensure desktop is powered on using the protocol-correct control-plane path.
@@ -399,6 +451,8 @@ def ensure_powered_on(
     protocol : required — ZTE | SCG (IPv4/IPv6/raw-ZTEC normalize to ZTE)
     boot_wait : seconds to poll cloud.is_running after triggering boot
     timeout : per-request timeout for control-plane calls
+        SCG getConnectInfo clamped to 120–160s (default 140) with limited retries.
+        Values < 120 are kept as-is for unit tests / deliberate short budgets.
 
     Returns
     -------

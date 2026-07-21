@@ -300,6 +300,49 @@ def encode_vdi_password(password):
     return base64.b64encode(ciphertext).decode("ascii")
 
 
+def parse_cag_rsa_public_key(text):
+    """Parse CAG sysConfig.rsapub text: ``N = <hex>`` / ``E = <hex>``.
+
+    Used by CAG2 connectDesktop (encrypt=5): RSA-PKCS1v1.5 → hex.upper → b64.
+    Mirrored from core.parse_cag_rsa_public_key (kept here to avoid circular import).
+    """
+    import re
+
+    n_match = re.search(r"\bN\s*=\s*([0-9a-fA-F]+)", str(text or ""))
+    e_match = re.search(r"\bE\s*=\s*([0-9a-fA-F]+)", str(text or ""))
+    if not n_match or not e_match:
+        raise ValueError("CAG RSA public key must contain N = <hex> and E = <hex>")
+    modulus = int(n_match.group(1), 16)
+    exponent = int(e_match.group(1), 16)
+    key_len = (modulus.bit_length() + 7) // 8
+    return modulus, exponent, key_len
+
+
+def rsa_pkcs1_v15_encrypt(text, cag_public_key_text):
+    """CAG RSA password: PKCS#1 v1.5 encrypt → uppercase hex → base64.
+
+    Evidence (OL3v0I official connectDesktop, encrypt=5): ciphertext 256 bytes
+    (RSA-2048) → 512 hex chars → base64 length ~684. NOT encode_vdi_password.
+    Returns ``(password_b64, key_len)``.
+    """
+    import secrets
+
+    raw = str(text).encode("utf-8")
+    modulus, exponent, key_len = parse_cag_rsa_public_key(cag_public_key_text)
+    if len(raw) > key_len - 11:
+        raise ValueError("CAG RSA plaintext too long for key_len=%d" % key_len)
+    ps_len = key_len - len(raw) - 3
+    padding = bytearray()
+    while len(padding) < ps_len:
+        padding.append(secrets.randbelow(255) + 1)
+    encoded = b"\x00\x02" + bytes(padding) + b"\x00" + raw
+    encrypted = pow(int.from_bytes(encoded, "big"), exponent, modulus).to_bytes(
+        key_len, "big"
+    )
+    password = base64.b64encode(encrypted.hex().upper().encode("ascii")).decode("ascii")
+    return password, key_len
+
+
 def decode_connect_string(connect_str):
     """Port of DecodeConnectString: hex decode -> AES-ECB decrypt -> pkcs7 unpad -> str."""
     try:

@@ -25,6 +25,7 @@ from typing import Any, Dict, List, Optional
 from .zte_security import (
     decode_security_json,
     encode_vdi_password,
+    rsa_pkcs1_v15_encrypt,
 )
 from .zte_raw_spice import (
     BuildZTERawDisplayInit,
@@ -45,7 +46,13 @@ DEFAULT_IP = "192.168.1.165"
 DEFAULT_HOST = "wangpeng-pc"
 DEFAULT_U_STR = "31BF5444-86E0-4D5D-B1AB-A42FFBAC72C9"
 
-# Target desktop (畅享版月包) — only this vmId is ever started.
+# CAG2.0 / HY material (official OL3v0I pcap 2026-07-21; do not invent).
+CAG2_CLIENT_VERSION = "V7.25.40-HY"
+CAG2_REQUEST_FROM = 5
+CAG2_ENCRYPT = 5
+
+# Fallback only (畅享版月包 legacy). Prefer firm.vm_id / explicit target_vm_id.
+# Never let this silently overwrite a real firmAuth vmId (OL3 CAG2 → 1000010).
 TARGET_VM_ID = os.environ.get(
     "CMCC_ZTE_TARGET_VMID", "163c68a9-5e1e-4cba-b9bb-68ad599a8abf"
 )
@@ -124,6 +131,12 @@ class MaterialReport:
     target_desktop_found: bool = False
     has_connect_str: bool = False
     connect_str: str = ""  # private; never serialized in to_dict (P6/P7 raw value)
+    # Edge auto-detect (material plane only; does NOT alter IPv4/IPv6 transport).
+    # kind: "IAG" | "CAG2.0" | "unknown"
+    edge_kind: str = ""
+    # Label for the material/edge branch: e.g. "IAG-material", "CAG2.0-edge".
+    # Transport after connectStr remains IPv4-CAGMux or IPv6-raw-ZTEC.
+    zte_path: str = ""
     # never include raw connectStr / key / password / token values
     redacted: Dict[str, Any] = field(default_factory=dict)
 
@@ -138,6 +151,8 @@ class MaterialReport:
             "desktopCount": self.desktop_count,
             "targetDesktopFound": self.target_desktop_found,
             "hasConnectStr": self.has_connect_str,
+            "edgeKind": self.edge_kind,
+            "ztePath": self.zte_path,
         }
 
 
@@ -216,6 +231,181 @@ def _compact_json(v: Any) -> str:
         return str(v)
 
 
+def _limited_http_body(resp, *, max_bytes: int = 65536,
+                       chunk: int = 4096) -> bytes:
+    """Read at most ``max_bytes`` from an HTTP response / HTTPError body.
+
+    CAG2.0 edges often return 404 with no Content-Length and leave the
+    socket open; unbounded ``resp.read()`` then hangs until the outer
+    timeout (~30s) and looks like a material failure. Cap the read so
+    callers fail fast with the real status code.
+    """
+    import socket
+
+    chunks: List[bytes] = []
+    total = 0
+    # Best-effort: shrink socket read timeout so a silent peer cannot
+    # pin us for the full urllib timeout on each chunk.
+    try:
+        fp = getattr(resp, "fp", None) or resp
+        raw = getattr(fp, "raw", fp)
+        sock = getattr(raw, "_sock", None)
+        if sock is None:
+            inner = getattr(raw, "raw", None)
+            sock = getattr(inner, "_sock", None) if inner is not None else None
+        if sock is not None and hasattr(sock, "settimeout"):
+            sock.settimeout(2.0)
+    except Exception:  # noqa: BLE001 - best-effort only
+        pass
+    try:
+        while total < max_bytes:
+            n = min(chunk, max_bytes - total)
+            try:
+                piece = resp.read(n)
+            except (TimeoutError, socket.timeout, OSError):
+                break
+            if not piece:
+                break
+            chunks.append(piece)
+            total += len(piece)
+    except Exception:  # noqa: BLE001 - return what we have
+        pass
+    return b"".join(chunks)
+
+
+@dataclass
+class CagEdgeProbe:
+    """Result of material-plane edge auto-detect (IAG vs CAG2.0)."""
+    kind: str = "unknown"          # IAG | CAG2.0 | unknown
+    status: int = 0
+    proxy_agent: str = ""
+    server: str = ""
+    body_len: int = 0
+    error: str = ""
+    elapsed: float = 0.0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "kind": self.kind,
+            "status": self.status,
+            "proxyAgent": self.proxy_agent,
+            "server": self.server,
+            "bodyLen": self.body_len,
+            "error": self.error,
+            "elapsed": round(self.elapsed, 3),
+        }
+
+
+def probe_cag_edge(cag_ip: str, cag_port: int, *,
+                   timeout: float = 5.0) -> CagEdgeProbe:
+    """Probe CAG HTTPS edge to auto-classify material path.
+
+    Evidence (OL3v0I vs ye4B6y, 2026-07-21)::
+
+      * **IAG** (historical material CAG): ``POST /cs/cs_sysConfig.action``
+        → HTTP 200, ``Server: IAG``, body carries ``ZTE_Security_Params``.
+      * **CAG2.0** edge (OL3 region): same POST → HTTP 404 empty body,
+        ``Proxy-agent: CAG2.0``; does **not** forward ``/cs/*``.
+
+    Pure GET is *not* enough: both edges may advertise ``Proxy-agent:
+    CAG2.0`` on GET. Classification uses a short POST to the real material
+    path with a capped body read (no hang on open-ended 404).
+
+    Does **not** dial IPv4-CAGMux / IPv6-raw-ZTEC transport — those run
+    only after ``connectStr`` is obtained from an IAG material plane.
+    """
+    import http.client
+
+    out = CagEdgeProbe()
+    if not cag_ip or not cag_port:
+        out.error = "missing cag_ip/cag_port"
+        return out
+    t0 = time.monotonic()
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    # Lightweight POST mirrors sys_config query shape enough for edge
+    # classification; empty body is fine (IAG still 200-envelopes).
+    path = (
+        "/cs/cs_sysConfig.action"
+        "?version=%s&language=zh&requestFrom=%s&RspSecurity=1"
+        % (urllib.parse.quote(CLIENT_VERSION), REQUEST_FROM)
+    )
+    conn = None
+    try:
+        conn = http.client.HTTPSConnection(
+            cag_ip, int(cag_port), timeout=timeout, context=ctx)
+        conn.request(
+            "POST", path, body=b"",
+            headers={
+                "Content-Type": "application/xml",
+                "Accept": "*/*",
+                "Connection": "close",
+            },
+        )
+        resp = conn.getresponse()
+        out.status = int(resp.status)
+        headers = {k.lower(): v for k, v in resp.getheaders()}
+        out.proxy_agent = headers.get("proxy-agent", "") or ""
+        out.server = headers.get("server", "") or ""
+        # Cap body: CAG2.0 404 often has no Content-Length and hangs on read.
+        try:
+            body = _limited_http_body(resp, max_bytes=8192, chunk=2048)
+        except Exception as body_exc:  # noqa: BLE001
+            body = b""
+            out.error = "%s: %s" % (type(body_exc).__name__, body_exc)
+        out.body_len = len(body) if body else 0
+        out.kind = _classify_cag_edge(
+            status=out.status,
+            proxy_agent=out.proxy_agent,
+            server=out.server,
+            body=body or b"",
+        )
+    except Exception as exc:  # noqa: BLE001 - probe must never raise
+        out.error = "%s: %s" % (type(exc).__name__, exc)
+        # Headers may already be set (e.g. hang on body). Re-classify if
+        # we have status+proxy so CAG2.0 is not downgraded to unknown.
+        if out.status and out.kind in ("", "unknown"):
+            out.kind = _classify_cag_edge(
+                status=out.status,
+                proxy_agent=out.proxy_agent,
+                server=out.server,
+                body=b"",
+            )
+        if out.kind in ("", "unknown") and not out.status:
+            out.kind = "unknown"
+    finally:
+        out.elapsed = time.monotonic() - t0
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001
+                pass
+    return out
+
+
+def _classify_cag_edge(*, status: int, proxy_agent: str, server: str,
+                       body: bytes) -> str:
+    """Map probe response → IAG | CAG2.0 | unknown (no transport change)."""
+    server_u = (server or "").strip().upper()
+    proxy_u = (proxy_agent or "").strip().upper()
+    body_l = body or b""
+    # Positive IAG: material plane alive.
+    if 200 <= status < 300:
+        if server_u == "IAG" or b"ZTE_Security" in body_l or b"success" in body_l.lower():
+            return "IAG"
+        # 2xx without clear markers still treat as IAG-capable material.
+        return "IAG"
+    # CAG2.0 edge: documented 404 + Proxy-agent, no material forward.
+    if status == 404 and "CAG2" in proxy_u:
+        return "CAG2.0"
+    if "CAG2" in proxy_u and status >= 400:
+        return "CAG2.0"
+    if server_u == "IAG":
+        return "IAG"
+    return "unknown"
+
+
 def first_desktop(list_obj: Dict[str, Any], vm_id: str) -> Optional[Dict[str, Any]]:
     """Mirror of Go FirstDesktop (client.go:279): strict vmId match.
 
@@ -244,6 +434,8 @@ class ZTEClient:
         self.terminal_uuid = _new_uuid()
         self.serial_number = _new_uuid()
         self.timeout = timeout
+        # CAG2 encrypt=5: RSA public key text from sysConfig.rsapub (N=/E=).
+        self._cag_rsa_pub: Optional[str] = None
         # ZTE CAG uses bundled client trust store -> skip verify (Go InsecureSkipVerify).
         self._ssl_ctx = ssl.create_default_context()
         self._ssl_ctx.check_hostname = False
@@ -252,7 +444,9 @@ class ZTEClient:
     # -- request core (client.go:158) --
 
     def _request(self, path: str, values: List[Dict[str, str]],
-                 body: Any) -> Dict[str, Any]:
+                 body: Any, *, require_success: bool = True,
+                 extra_headers: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+        """POST /cs/* with optional success-gate (CAG2 connectDesktop may need soft)."""
         query = _encode_query(values)
         req_url = "https://%s:%d%s" % (self.firm.cag_ip, self.firm.cag_port, path)
         if query:
@@ -262,14 +456,20 @@ class ZTEClient:
         data = encrypted_body.encode("utf-8") if encrypted_body else None
         req = urllib.request.Request(req_url, data=data, method="POST")
         self._set_headers(req)
+        if extra_headers:
+            for hk, hv in extra_headers.items():
+                if hv:
+                    req.add_header(hk, str(hv))
 
         try:
             with urllib.request.urlopen(req, timeout=self.timeout,
                                         context=self._ssl_ctx) as resp:
-                resp_body = resp.read()
+                # Cap body read: CAG2.0 404 leaves socket open w/o CL.
+                resp_body = _limited_http_body(resp)
                 status = resp.getcode()
         except urllib.error.HTTPError as err:
-            err_body = err.read() if hasattr(err, "read") else b""
+            # HTTPError is a file-like response; also cap (OL3 root cause).
+            err_body = _limited_http_body(err) if hasattr(err, "read") else b""
             raise ZTEError("zte %s failed: status=%d body=%s"
                            % (path, err.code, err_body.decode("utf-8", "replace"))) from err
         except urllib.error.URLError as err:
@@ -288,7 +488,7 @@ class ZTEClient:
         except Exception as err:
             raise ZTEError("zte %s: %s" % (path, err)) from err
 
-        if not result.get("success"):
+        if require_success and not result.get("success"):
             raise ZTEError("zte %s failed: %s" % (path, _compact_json(result)))
         return result
 
@@ -312,6 +512,50 @@ class ZTEClient:
             {"key": "RspSecurity", "value": "1"},
         ]
         return self._request("/cs/cs_sysConfig.action", values, "")
+
+    def sys_config_cag2(self) -> Dict[str, Any]:
+        """CAG2.0 / HY sysConfig (official OL3v0I: version=V7.25.40-HY, requestFrom=5).
+
+        AG edge returns 404 unless X-Ap-sHost=vmc_ip:vmc_port is set (OL3v0I).
+        """
+        values = [
+            {"key": "version", "value": CAG2_CLIENT_VERSION},
+            {"key": "language", "value": "zh"},
+            {"key": "requestFrom", "value": str(CAG2_REQUEST_FROM)},
+            {"key": "name", "value": self.firm.vm_user_name},
+            {"key": "RspSecurity", "value": "1"},
+        ]
+        extra = None
+        f = self.firm
+        if f.vmc_ip and f.vmc_port:
+            extra = {"X-Ap-sHost": "%s:%s" % (f.vmc_ip, f.vmc_port)}
+        return self._request(
+            "/cs/cs_sysConfig.action", values, "", extra_headers=extra,
+        )
+
+    def ensure_cag_rsa_pub(self, *, force: bool = False) -> str:
+        """Fetch+cache sysConfig.rsapub for CAG2 encrypt=5 password.
+
+        Returns raw rsapub text containing ``N = <hex>`` / ``E = <hex>``.
+        """
+        if self._cag_rsa_pub and not force:
+            return self._cag_rsa_pub
+        result = self.sys_config_cag2()
+        rsapub = ""
+        if isinstance(result, dict):
+            rsapub = _string_value(result.get("rsapub"))
+            if not rsapub:
+                # some edges nest under sysConfig
+                nested = result.get("sysConfig")
+                if isinstance(nested, dict):
+                    rsapub = _string_value(nested.get("rsapub"))
+        if not rsapub or "N" not in rsapub:
+            raise ZTEError(
+                "CAG2 sysConfig missing rsapub (got keys=%s)"
+                % (list(result.keys()) if isinstance(result, dict) else type(result).__name__)
+            )
+        self._cag_rsa_pub = rsapub
+        return rsapub
 
     def get_access_token(self) -> TokenInfo:
         """Mirror of Go GetAccessToken (client.go:85)."""
@@ -416,23 +660,323 @@ class ZTEClient:
         return self._request("/cs/cs_startDesktop_async_query.action", values, "")
 
 
+    def _connect_desktop_body(
+        self, *, vmid: str = "", rsa_public_key: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """CAG2.0 / HY connectDesktop body (OL3v0I official pcap 2026-07-21).
+
+        Clear JSON (not query-string). Evidence-locked fields only.
+        password = RSA-PKCS1v1.5(pwd) → hex.upper → base64 (encrypt=5).
+        """
+        f = self.firm
+        vm = vmid or f.vm_id
+        sn = self._serial_number()
+        # diskNo in official client was dmidecode system info; SN fallback is
+        # sufficient for material plane (server accepts SN-like strings).
+        disk_no = sn
+        rsapub = rsa_public_key if rsa_public_key is not None else self._cag_rsa_pub
+        if not rsapub:
+            raise ZTEError(
+                "CAG2 connectDesktop needs rsa_public_key "
+                "(call ensure_cag_rsa_pub first or pass rsa_public_key=)"
+            )
+        password, _key_len = rsa_pkcs1_v15_encrypt(f.vm_password, rsapub)
+        return {
+            "RspSecurity": 1,
+            "SNcode": sn,
+            "allowExtUSBPolicy": 1,
+            "allowSwitchRap": 1,
+            "clientIp": DEFAULT_IP,
+            "clienttype": 0,
+            "diskNo": disk_no,
+            "encrypt": CAG2_ENCRYPT,
+            "encryption": "1",
+            "hardware": 4,
+            "hostName": DEFAULT_HOST,
+            "isvm": 0,
+            "language": "zh",
+            "localipandmac": DEFAULT_IP + "," + DEFAULT_MAC,
+            "mac": DEFAULT_MAC,
+            "netType": 2,
+            "netflags": 1,
+            "newcharsetparse": "1",
+            "newpara": 1,
+            "ostype": 5,
+            "password": password,
+            "prover": 1,
+            "raptype": 2,
+            "requestFrom": CAG2_REQUEST_FROM,
+            "supportAsync": 1,
+            "supportCustomConfig": "00000000000000000000000000000011",
+            "type": 0,
+            "upmnew": 1,
+            "username": f.vm_user_name,
+            "uuid": "",
+            "verifyTerminalBind": "11",
+            "version": CAG2_CLIENT_VERSION,
+            "vmid": vm,
+            "watermarkType": 1,
+        }
+
+    def connect_desktop(self, *, vmid: str = "") -> Dict[str, Any]:
+        """CAG2.0 material: POST /cs/cs_connectDesktop.action (official OL3v0I).
+
+        No accessToken stage; username/password/vmid in body. Response is
+        ZTE_Security_Params → decode_security_json → connectInfo (connectStr).
+        """
+        self.ensure_cag_rsa_pub()
+        body = self._connect_desktop_body(vmid=vmid)
+        extra = None
+        f = self.firm
+        if f.vmc_ip and f.vmc_port:
+            extra = {"X-Ap-sHost": "%s:%s" % (f.vmc_ip, f.vmc_port)}
+        return self._request(
+            "/cs/cs_connectDesktop.action", [], body,
+            require_success=True, extra_headers=extra,
+        )
+
+    @staticmethod
+    def extract_connect_str(result: Dict[str, Any]) -> str:
+        """Pull connectStr from CAG2 connectInfo or flat IAG-style result."""
+        if not isinstance(result, dict):
+            return ""
+        cs = _string_value(result.get("connectStr"))
+        if cs:
+            return cs
+        info = result.get("connectInfo")
+        if isinstance(info, dict):
+            return _string_value(info.get("connectStr"))
+        return ""
+
+
+
+
 class ZTEError(Exception):
     """Raised when a ZTE CAG control-plane call fails."""
 
 
 # --- orchestration (P5-011 async query loop) -------------------------------
 
-def run_material(firm: ZTEFirmAuth, *, target_vm_id: str = TARGET_VM_ID,
+def run_material(firm: ZTEFirmAuth, *, target_vm_id: str = "",
                  async_retries: int = 30, async_interval: float = 2.0,
-                 do_start: bool = True) -> MaterialReport:
+                 do_start: bool = True,
+                 skip_edge_probe: bool = False,
+                 preferred_edge_kind: str = "",
+                 cag2_allow_async: bool = False,
+                 cag2_connect_retries: int = 3) -> MaterialReport:
     """Run the full ZTE material control-plane sequence and return a redacted report.
 
-    Stages: zte_sys_config -> zte_get_token -> zte_get_desktop_list ->
-    zte_start_desktop -> zte_async_query (connectStr).
+    Stages: zte_edge_probe|zte_edge_sticky -> (CAG2 connectDesktop | IAG
+    sys_config/token/list/start) -> optional async_query.
+
+    Edge auto-detect (material plane only)::
+
+      * IAG      → existing ``/cs/*`` material (IPv4/IPv6 transport unchanged)
+      * CAG2.0   → cs_connectDesktop.action (HY/ICE; official OL3v0I pcap)
+      * unknown  → fall through to legacy material (same as before)
+
+    Sticky edge (``preferred_edge_kind``)::
+
+      * When set (and ``CCK_ZTE_FORCE_PROBE`` not truthy), skip HTTP edge probe
+        and go straight to that material branch. Used after first success so
+        redial/rematerial does not re-probe or thrash IAG↔CAG2.
+      * ``CCK_ZTE_FORCE_PROBE=1`` ignores sticky and re-probes.
+
+    CAG2 empty connectStr (OL3v0I live evidence)::
+
+      * Default: retry ``connectDesktop`` a few times; **do not** call legacy
+        ``cs_startDesktop_async_query`` (always HTTP 404 on CAG2.0 edge).
+      * Opt-in only: ``cag2_allow_async=True`` restores async poll (unit tests /
+        rare gateways that still expose it).
+
+    Does **not** modify IPv4-CAGMux or IPv6-raw-ZTEC transport paths.
     """
+    import os
+    import time as _time
+
     report = MaterialReport()
-    client = ZTEClient(firm)
+    force_probe = os.environ.get("CCK_ZTE_FORCE_PROBE", "").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
+    preferred = (preferred_edge_kind or "").strip()
+    if force_probe:
+        preferred = ""
+        skip_edge_probe = False
+
+    def _is_cag2_kind(kind: str) -> bool:
+        k = (kind or "").strip().upper()
+        return k in ("CAG2.0", "CAG2") or k.startswith("CAG2")
+
+    def _run_cag2_connect_desktop() -> MaterialReport:
+        """CAG2.0 / HY material: connectDesktop + optional retry; async opt-in."""
+        report.edge_kind = "CAG2.0"
+        report.zte_path = "CAG2.0-connectDesktop"
+        print(
+            "[zte] path=CAG2.0-connectDesktop (auto; material)",
+            flush=True,
+        )
+        client = ZTEClient(firm)
+        report.stage = "zte_cag2_connect_desktop"
+        # Prefer explicit arg → firm.vm_id → TARGET_VM_ID fallback.
+        # Empty-string default must NOT shadow firm.vm_id with 畅享 UUID.
+        vm = (
+            (target_vm_id or "").strip()
+            or (firm.vm_id or "").strip()
+            or TARGET_VM_ID
+        )
+        if vm:
+            firm.vm_id = vm  # keep async_query vmid consistent
+        result = client.connect_desktop(vmid=vm)
+        report.redacted["cag2ConnectKeys"] = sorted(
+            [str(k) for k in result.keys()]
+        ) if isinstance(result, dict) else []
+        # token often returned with deferred connectStr (L9504/L9664)
+        token_info = result.get("tokenInfo") if isinstance(result, dict) else None
+        if isinstance(token_info, dict):
+            at = _string_value(token_info.get("accessToken"))
+            if at:
+                report.has_token = True
+        connect_str = ZTEClient.extract_connect_str(result)
+
+        # Live CAG2.0 edge: async_query is HTTP 404. Prefer re-calling
+        # connectDesktop (ticket sometimes arrives a moment later).
+        if not connect_str and do_start and cag2_connect_retries > 0:
+            report.stage = "zte_cag2_connect_desktop_retry"
+            tries = max(1, int(cag2_connect_retries))
+            for attempt in range(1, tries + 1):
+                _time.sleep(min(1.0 * attempt, 3.0))
+                print(
+                    "[zte] CAG2 connectDesktop retry %d/%d "
+                    "(skip async 404 by default)" % (attempt, tries),
+                    flush=True,
+                )
+                result = client.connect_desktop(vmid=vm)
+                report.redacted["cag2ConnectKeys"] = sorted(
+                    [str(k) for k in result.keys()]
+                ) if isinstance(result, dict) else []
+                token_info = (
+                    result.get("tokenInfo") if isinstance(result, dict) else None
+                )
+                if isinstance(token_info, dict):
+                    at = _string_value(token_info.get("accessToken"))
+                    if at:
+                        report.has_token = True
+                connect_str = ZTEClient.extract_connect_str(result)
+                if connect_str:
+                    break
+
+        if not connect_str and do_start and cag2_allow_async:
+            # Opt-in legacy path (unit tests / rare gateways). Live CAG2 → 404.
+            report.stage = "zte_cag2_async_query"
+            at = ""
+            if isinstance(token_info, dict):
+                at = _string_value(token_info.get("accessToken"))
+            if not at:
+                report.error = (
+                    "cag2 connectStr empty and no tokenInfo.accessToken"
+                )
+                report.next_step = (
+                    "inspect connectDesktop response / firmAuth password"
+                )
+                return report
+            try:
+                connect_str = _async_query_connect_str(
+                    client, at,
+                    retries=async_retries, interval=async_interval,
+                )
+            except ZTEError as err:
+                report.error = "cag2 connectStr empty; async fallback: %s" % err
+                report.next_step = (
+                    "inspect connectDesktop response / firmAuth password"
+                )
+                return report
+
+        if not connect_str:
+            if do_start and not cag2_allow_async:
+                report.error = (
+                    "cag2 connectDesktop returned no connectStr "
+                    "(async skipped; pass cag2_allow_async=True for legacy poll)"
+                )
+            else:
+                report.error = "cag2 connectDesktop returned no connectStr"
+            report.next_step = "inspect decrypt keys / vmid / password"
+            return report
+        report.connect_str = connect_str
+        report.has_connect_str = True
+        report.ok = True
+        report.stage = "zte_material_done"
+        report.next_step = (
+            "P6/P7: dial outer CAG (ICE/HY), build inner SPICE link"
+        )
+        print(
+            "[zte] path=CAG2.0-connectDesktop ok connectStr_len=%d"
+            % len(connect_str),
+            flush=True,
+        )
+        return report
+
     try:
+        # --- edge: sticky preferred OR HTTP probe (third material branch) ---
+        is_cag2 = False
+        if preferred:
+            # Write-disk sticky: skip probe, lock material branch.
+            report.stage = "zte_edge_sticky"
+            if _is_cag2_kind(preferred):
+                report.edge_kind = "CAG2.0"
+                is_cag2 = True
+            else:
+                report.edge_kind = preferred
+            report.redacted["edgeProbe"] = {
+                "kind": report.edge_kind,
+                "sticky": True,
+                "skipped": True,
+                "forceProbe": False,
+            }
+            print(
+                "[zte] path=edge-sticky kind=%s "
+                "(skip probe; CCK_ZTE_FORCE_PROBE=1 to re-probe)"
+                % report.edge_kind,
+                flush=True,
+            )
+            if report.edge_kind == "IAG":
+                report.zte_path = "IAG-material"
+        elif not skip_edge_probe:
+            report.stage = "zte_edge_probe"
+            probe = probe_cag_edge(firm.cag_ip, firm.cag_port)
+            report.edge_kind = probe.kind
+            report.redacted["edgeProbe"] = probe.to_dict()
+            print(
+                "[zte] path=edge-probe kind=%s status=%s proxy=%s server=%s "
+                "elapsed=%.2fs err=%s"
+                % (probe.kind, probe.status, probe.proxy_agent or "-",
+                   probe.server or "-", probe.elapsed, probe.error or "-"),
+                flush=True,
+            )
+            # Fail-fast on CAG2.0: kind, or 404+Proxy-agent even if probe
+            # partially timed out during body read.
+            proxy_u = (probe.proxy_agent or "").upper()
+            is_cag2 = (
+                probe.kind == "CAG2.0"
+                or (probe.status == 404 and "CAG2" in proxy_u)
+                or (probe.status >= 400 and "CAG2" in proxy_u
+                    and probe.kind != "IAG")
+            )
+            if probe.kind == "IAG":
+                report.zte_path = "IAG-material"
+
+        if is_cag2:
+            return _run_cag2_connect_desktop()
+
+        # IAG / unknown / skip-probe: fall through to legacy /cs material.
+        # Sticky preferred IAG already set zte_path above.
+        if not report.zte_path:
+            report.zte_path = "IAG-material"
+        if not report.edge_kind:
+            report.edge_kind = "skipped" if (skip_edge_probe and not preferred) else "unknown"
+
+        # Construct client only after edge pass (true fail-fast, no dial).
+        client = ZTEClient(firm)
+
         report.stage = "zte_sys_config"
         client.sys_config()
 
@@ -445,10 +989,15 @@ def run_material(firm: ZTEFirmAuth, *, target_vm_id: str = TARGET_VM_ID,
         desktops = desktop_list.get("desktopList")
         report.desktop_count = len(desktops) if isinstance(desktops, list) else 0
 
-        desktop = first_desktop(desktop_list, target_vm_id)
+        resolved_vm = (
+            (target_vm_id or "").strip()
+            or (firm.vm_id or "").strip()
+            or TARGET_VM_ID
+        )
+        desktop = first_desktop(desktop_list, resolved_vm)
         report.target_desktop_found = desktop is not None
         if desktop is None:
-            report.error = "target vmId %s not found in desktopList" % target_vm_id
+            report.error = "target vmId %s not found in desktopList" % resolved_vm
             report.next_step = "check vmId / account binding"
             return report
 
@@ -487,7 +1036,8 @@ def run_material(firm: ZTEFirmAuth, *, target_vm_id: str = TARGET_VM_ID,
 def run_zte_keepalive_session(firm: ZTEFirmAuth, connect_str: str, *,
                               duration: float = 120.0,
                               auth_template_hex: str = "",
-                              dial_timeout: float = 30.0) -> dict:
+                              dial_timeout: float = 30.0,
+                              preferred_edge_kind: str = "") -> dict:
     """Full ZTE CAG keepalive session (P6–P9).
 
     Two transport paths (selected by auth host family)::
@@ -605,14 +1155,85 @@ def run_zte_keepalive_session(firm: ZTEFirmAuth, connect_str: str, *,
             "data_sent": 0,
             "prime_recv": 0,
             "redials": 0,
+            # CAG2/OL3 evidence (F1 2026-07-21): re-dial with the *same*
+            # connectStr times out after ~2×900s. Refresh material only —
+            # do NOT change dial_cag_tcp_raw / keepalive_raw_ztec frames.
+            "rematerial_ok": 0,
+            "rematerial_fail": 0,
         }
         last_err = None
+
+        def _rematerial_for_redial() -> None:
+            """Refresh connectStr + rebuild dial opts (CAG2 control-plane only).
+
+            Bound to raw-path redial loop. Leaves IPv4 CAGMux path untouched
+            and does not alter ZTEC frame layout / HB opcodes.
+            """
+            nonlocal connect_str, cp, inner, outer, opts
+            print(
+                "[zte] raw-ZTEC rematerial before redial "
+                f"(redials={total['redials']}) …",
+                flush=True,
+            )
+            try:
+                # Sticky edge on redial: skip probe + lock CAG2/IAG material.
+                # Avoids re-probe thrash and CAG2→async 404 noise (F1).
+                mrep = run_material(
+                    firm,
+                    do_start=True,
+                    skip_edge_probe=bool(preferred_edge_kind),
+                    preferred_edge_kind=preferred_edge_kind or "",
+                    cag2_allow_async=False,
+                )
+            except Exception as merr:  # noqa: BLE001
+                total["rematerial_fail"] = int(total.get("rematerial_fail") or 0) + 1
+                print(
+                    f"[zte] raw-ZTEC rematerial exception: "
+                    f"{type(merr).__name__}: {merr}",
+                    flush=True,
+                )
+                raise
+            if not getattr(mrep, "ok", False) or not getattr(mrep, "connect_str", ""):
+                total["rematerial_fail"] = int(total.get("rematerial_fail") or 0) + 1
+                err = getattr(mrep, "error", None) or "connectStr empty"
+                print(f"[zte] raw-ZTEC rematerial failed: {err}", flush=True)
+                raise ZTEError("rematerial on redial failed: %s" % err)
+            connect_str = mrep.connect_str
+            cp = decode_connect_params(connect_str)
+            inner = inner_from_connect_params(cp)
+            outer = outer_from_firm(firm)
+            opts = CAGDialOptions(
+                address=outer.address,
+                inner=inner,
+                auth_template_hex=auth_template_hex,
+                timeout=dial_timeout,
+            )
+            total["rematerial_ok"] = int(total.get("rematerial_ok") or 0) + 1
+            _h = ""
+            try:
+                _h = str(
+                    getattr(inner, "host", None)
+                    or getattr(inner, "address", "")
+                    or ""
+                )
+            except Exception:
+                _h = ""
+            print(
+                f"[zte] raw-ZTEC rematerial ok cs_len={len(connect_str)} "
+                f"inner_host={_h!r}",
+                flush=True,
+            )
+
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0.05:
                 break
             slice_s = min(remaining, _RAW_SLICE_S)
             try:
+                # After first slice / any prior dial error: refresh material so
+                # redial is not stuck on a TTL-expired connectStr (F1 evidence).
+                if int(total.get("redials") or 0) > 0:
+                    _rematerial_for_redial()
                 # Progress: path= alone leaves 30–60s of silence; users Ctrl+C
                 # thinking hang (WebUI + interactive). Emit dial/slice ticks.
                 print(
