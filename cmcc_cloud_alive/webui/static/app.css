@@ -27,6 +27,11 @@
   --shadow-md: 0 4px 12px rgba(24, 24, 27, 0.06);
   --font: "Geist", "Inter", "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  /* R5 layout-lock tokens — equivalent literals only (HARD_GATE; do not retune) */
+  --h-control: 36px;
+  --h-global-log: 9em;
+  --h-card-log: 188px;
+  --h-card-log-min: 18.15em;
 }
 
 * {
@@ -238,7 +243,7 @@ img.brand-mark {
 .card input[type="number"],
 .card select {
   width: 100%;
-  min-height: 36px;
+  min-height: var(--h-control);
   padding: 8px 10px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
@@ -307,8 +312,8 @@ img.brand-mark {
   /* HARD_GATE#665 B: segmented control, not pill/ellipse */
   border-radius: var(--radius-sm);
   padding: 0 10px;
-  min-height: 36px; /* HARD_GATE#715 equal control height */
-  height: 36px;
+  min-height: var(--h-control); /* HARD_GATE#715 equal control height */
+  height: var(--h-control);
   line-height: 1.2;
   display: inline-flex;
   align-items: center;
@@ -367,7 +372,7 @@ img.brand-mark {
   background: #fff;
   color: var(--text);
   padding: 8px 14px;
-  min-height: 36px;
+  min-height: var(--h-control);
   transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease, color 0.15s ease;
 }
 
@@ -382,9 +387,9 @@ img.brand-mark {
 }
 
 .btn-sm {
-  /* HARD_GATE#715: no short btn-sm in control rows; keep 36px line */
-  min-height: 36px;
-  height: 36px;
+  /* HARD_GATE#715: no short btn-sm in control rows; keep var(--h-control) line */
+  min-height: var(--h-control);
+  height: var(--h-control);
   padding: 0 12px;
   font-size: 12px;
   display: inline-flex;
@@ -700,15 +705,15 @@ img.brand-mark {
   color: var(--text);
 }
 
-/* OPS#456/#489 / HARD_GATE#829 — fixed ~6-line exterior log viewport (=#810 188px) */
+/* OPS#456/#489 / HARD_GATE#829 — fixed ~6-line exterior log viewport (=#810 var(--h-card-log)) */
 .card-log-expanded {
   min-height: 0;
 }
 .card-log-expanded .log-box {
-  /* true 6 lines: align with #810 14.025em / 188px system */
-  height: 188px;
-  max-height: 188px;
-  min-height: 18.15em; /* HARD_GATE#845 */
+  /* true 6 lines: align with #810 14.025em / var(--h-card-log) system */
+  height: var(--h-card-log);
+  max-height: var(--h-card-log);
+  min-height: var(--h-card-log-min); /* HARD_GATE#845 */
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
@@ -720,9 +725,9 @@ img.brand-mark {
 
 #global-log {
   /* FIXED empty-state height from user screenshot 2026-07-22 (≈106px @12px mono) */
-  height: 9em;
-  min-height: 9em;
-  max-height: 9em;
+  height: var(--h-global-log);
+  min-height: var(--h-global-log);
+  max-height: var(--h-global-log);
 }
 
 .log-line {
@@ -1079,7 +1084,7 @@ img.brand-mark {
   font-weight: 650;
 }
 .config-modal-card .modal-x {
-  min-width: 36px;
+  min-width: var(--h-control);
   font-size: 22px;
   line-height: 1;
   padding: 4px 8px;
@@ -1211,7 +1216,7 @@ img.brand-mark {
   margin-top: 8px;
 }
 .desk-seg-tools .btn {
-  min-height: 36px;
+  min-height: var(--h-control);
 }
 
 .desk-protocol-note {
@@ -1418,7 +1423,7 @@ img.brand-mark {
 
 /* HARD GATE OPS#508 / HARD_GATE#829 — log viewport ~6 lines (=#810 14.025em) */
 .log-viewport {
-  max-height: 18.15em; /* HARD_GATE#845 */ /* true 6 lines */
+  max-height: var(--h-card-log-min); /* HARD_GATE#845 */ /* true 6 lines */
   overflow-y: auto;
   overscroll-behavior: contain;
   line-height: 1.45;
@@ -1509,8 +1514,8 @@ img.brand-mark {
   justify-content: center;
   text-align: center;
   padding: 0 6px;
-  min-height: 36px; /* HARD_GATE#715 equal with btn/input */
-  height: 36px;
+  min-height: var(--h-control); /* HARD_GATE#715 equal with btn/input */
+  height: var(--h-control);
   border-radius: var(--radius-sm);
   font-size: 12px;
 }
@@ -1528,8 +1533,8 @@ img.brand-mark {
 .form-pair input[type="text"],
 .form-bottom-3 input,
 .form-bottom-3 select {
-  min-height: 36px; /* HARD_GATE#715 equal control height */
-  height: 36px;
+  min-height: var(--h-control); /* HARD_GATE#715 equal control height */
+  height: var(--h-control);
   padding: 0 8px;
   box-sizing: border-box;
 }
@@ -1559,7 +1564,7 @@ img.brand-mark {
   font-size: 11px;
 }
 
-/* A11 / HARD_GATE#715: composer control row one 36px line */
+/* A11 / HARD_GATE#715: composer control row one var(--h-control) line */
 .desk-seg-tools .btn,
 .desk-seg-tools .btn-sm,
 .composer .btn,
@@ -1579,8 +1584,8 @@ img.brand-mark {
 .form-pair input,
 .form-pair select,
 .form-pair .seg-btn {
-  min-height: 36px !important;
-  height: 36px;
+  min-height: var(--h-control) !important;
+  height: var(--h-control);
   padding-top: 0;
   padding-bottom: 0;
   display: inline-flex;
@@ -1639,7 +1644,7 @@ img.brand-mark {
 .card-surface-dual .log-viewport,
 .log-viewport {
   flex: 1 1 auto;
-  min-height: 18.15em; /* HARD_GATE#845 */
+  min-height: var(--h-card-log-min); /* HARD_GATE#845 */
   max-height: 14.025em; /* HARD_GATE#829 =#810 true 6 lines */
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -1726,7 +1731,7 @@ img.brand-mark {
   }
 }
 
-/* HARD_GATE#729 C: composer/modal same-row controls one 36px visual line */
+/* HARD_GATE#729 C: composer/modal same-row controls one var(--h-control) visual line */
 .composer .btn,
 .composer .btn-sm,
 .composer .seg-btn,
@@ -1745,8 +1750,8 @@ img.brand-mark {
 .form-bottom-3 input,
 .form-bottom-3 select,
 .form-bottom-3 .seg-btn {
-  min-height: 36px !important;
-  height: 36px !important;
+  min-height: var(--h-control) !important;
+  height: var(--h-control) !important;
   box-sizing: border-box;
 }
 .composer .btn-sm,
@@ -1782,7 +1787,7 @@ img.brand-mark {
 .card-surface-dual .log-viewport,
 .log-viewport {
   flex: 1 1 auto;
-  min-height: 18.15em; /* HARD_GATE#845 */ /* HARD_GATE#829 =#810 true 6 lines */
+  min-height: var(--h-card-log-min); /* HARD_GATE#845 */ /* HARD_GATE#829 =#810 true 6 lines */
   max-height: 14.025em !important;
   overflow-y: auto !important;
   overscroll-behavior: contain;
@@ -1902,7 +1907,7 @@ button.desk-refresh-cta:disabled,
 }
 .desk-seg-tools .btn,
 .desk-seg-tools .btn-sm {
-  min-height: 36px !important;
+  min-height: var(--h-control) !important;
   cursor: pointer;
 }
 /* HARD_GATE#784/#829: card log viewport fixed true 6 lines (=#810 14.025em); internal scroll */
@@ -1913,8 +1918,8 @@ button.desk-refresh-cta:disabled,
   flex: 0 0 14.025em !important;
   flex-grow: 0 !important;
   flex-shrink: 0 !important;
-  height: 18.15em; /* HARD_GATE#845 */ /* true 6 lines */
-  min-height: 18.15em; /* HARD_GATE#845 */
+  height: var(--h-card-log-min); /* HARD_GATE#845 */ /* true 6 lines */
+  min-height: var(--h-card-log-min); /* HARD_GATE#845 */
   max-height: 14.025em !important;
   overflow-x: hidden !important;
   overflow-y: auto !important;
@@ -1938,8 +1943,8 @@ button.desk-refresh-cta:disabled,
 #c-login,
 .btn-login,
 button.btn-login {
-  min-height: 36px !important;
-  height: 36px !important;
+  min-height: var(--h-control) !important;
+  height: var(--h-control) !important;
   font-weight: 600;
 }
 .composer-actions {
@@ -2270,7 +2275,7 @@ button.btn-login-inline {
 
 
 /* HARD_GATE#810 CARD_LOG_6LINES_TALLER
-   True 6-line card log viewport (sole system 14.025em / 188px after #829 purge).
+   True 6-line card log viewport (sole system 14.025em / var(--h-card-log) after #829 purge).
    Keep fixed height + internal scroll; no whole-card reflow. DBLCLICK = JS sole. */
 .card-surface-dual .log-box.log-viewport,
 .card-surface-dual .log-viewport,
@@ -2280,8 +2285,8 @@ button.btn-login-inline {
   flex: 0 0 14.025em !important;
   flex-grow: 0 !important;
   flex-shrink: 0 !important;
-  height: 18.15em; /* HARD_GATE#845 */
-  min-height: 18.15em; /* HARD_GATE#845 */
+  height: var(--h-card-log-min); /* HARD_GATE#845 */
+  min-height: var(--h-card-log-min); /* HARD_GATE#845 */
   max-height: 14.025em !important;
   overflow-x: hidden !important;
   overflow-y: auto !important;
@@ -2307,7 +2312,7 @@ button.btn-login-inline {
 
 /* slightly taller dual surface so left/right stay balanced */
 .card-surface-dual {
-  min-height: 188px;
+  min-height: var(--h-card-log);
 }
 
 /* keep log lines compact but readable for 6-count */
@@ -2418,9 +2423,9 @@ button.btn-login-inline {
 .log-panel .log-box[data-log],
 .card-log-expanded .log-box,
 .card-log-expanded .log-viewport {
-  min-height: 18.15em !important; /* HARD_GATE#845 +10% */
-  height: 18.15em !important; /* HARD_GATE#845 +10% */
-  max-height: 18.15em !important; /* HARD_GATE#845 +10% */
+  min-height: var(--h-card-log-min) !important; /* HARD_GATE#845 +10% */
+  height: var(--h-card-log-min) !important; /* HARD_GATE#845 +10% */
+  max-height: var(--h-card-log-min) !important; /* HARD_GATE#845 +10% */
   overflow-y: auto !important;
   overscroll-behavior: contain;
 }
@@ -2443,8 +2448,8 @@ button.btn-login-inline {
 .log-full-modal .log-full-close {
   position: relative;
   z-index: 5;
-  min-width: 36px;
-  min-height: 36px;
+  min-width: var(--h-control);
+  min-height: var(--h-control);
   line-height: 1;
   font-size: 22px;
   cursor: pointer;
@@ -2515,9 +2520,9 @@ body.log-modal-open {
   flex: 0 0 16.5em !important;
   flex-grow: 0 !important;
   flex-shrink: 0 !important;
-  height: 18.15em !important; /* HARD_GATE#845 +10% */
-  min-height: 18.15em !important; /* HARD_GATE#845 +10% */
-  max-height: 18.15em !important; /* HARD_GATE#845 +10% */
+  height: var(--h-card-log-min) !important; /* HARD_GATE#845 +10% */
+  min-height: var(--h-card-log-min) !important; /* HARD_GATE#845 +10% */
+  max-height: var(--h-card-log-min) !important; /* HARD_GATE#845 +10% */
   overflow-y: auto !important;
   overflow-x: hidden !important;
   overscroll-behavior: contain;
@@ -2614,7 +2619,7 @@ body.log-modal-open {
   width: auto !important;
   min-width: 4.5rem !important;
   max-width: 7rem !important;
-  height: 36px !important;
+  height: var(--h-control) !important;
   padding: 0 14px !important;
   flex: 0 0 auto !important;
 }
@@ -2636,7 +2641,7 @@ body.log-modal-open {
 }
 .desk-seg .seg-btn,
 .desk-seg .desk-item {
-  min-height: 36px !important;
+  min-height: var(--h-control) !important;
   height: auto !important;
   border-radius: 8px !important;
 }
@@ -2695,8 +2700,8 @@ button.desk-refresh-cta:hover,
 #log-full-close {
   position: relative !important;
   z-index: 2 !important;
-  min-width: 36px !important;
-  min-height: 36px !important;
+  min-width: var(--h-control) !important;
+  min-height: var(--h-control) !important;
   font-size: 22px !important;
   line-height: 1 !important;
   cursor: pointer !important;
@@ -2840,7 +2845,7 @@ button.desk-refresh-cta:hover,
   /* room for ~6 complete entries; long lines wrap so text is fully readable */
   height: auto !important;
   min-height: 11.55em !important; /* HARD_GATE#845 +10% */
-  max-height: 18.15em !important; /* HARD_GATE#845 +10% */
+  max-height: var(--h-card-log-min) !important; /* HARD_GATE#845 +10% */
   overflow-x: hidden !important;
   overflow-y: auto !important;
   overscroll-behavior: contain !important;
@@ -3067,7 +3072,7 @@ button.desk-refresh-cta:hover,
   width: 100% !important;
   min-width: 0 !important;
   max-width: none !important;
-  height: 36px !important;
+  height: var(--h-control) !important;
   box-sizing: border-box !important;
 }
 .composer-row .field-row {
@@ -3088,7 +3093,7 @@ button.desk-refresh-cta:hover,
 .composer-row .seg {
   display: inline-flex !important;
   width: 100% !important;
-  min-height: 36px !important;
+  min-height: var(--h-control) !important;
 }
 .composer-row .seg .seg-btn {
   flex: 1 1 0 !important;
@@ -3126,8 +3131,8 @@ button.desk-refresh-cta:hover,
 .btn-login-cta,
 #c-login.btn-login-cta,
 #c-login-sub.btn-login-cta {
-  height: 36px !important;
-  min-height: 36px !important;
+  height: var(--h-control) !important;
+  min-height: var(--h-control) !important;
   padding: 0 10px !important;
   white-space: nowrap !important;
   width: auto !important;
@@ -3351,7 +3356,7 @@ button.desk-refresh-cta:hover,
   flex: 0 1 auto !important;
   height: auto !important;
   min-height: 11.55em !important;
-  max-height: 18.15em !important;
+  max-height: var(--h-card-log-min) !important;
   overflow-x: hidden !important;
   overflow-y: auto !important;
   overscroll-behavior: contain !important;
@@ -3370,9 +3375,9 @@ button.desk-refresh-cta:hover,
   flex: none !important;
   flex-grow: 0 !important;
   flex-shrink: 0 !important;
-  height: 9em !important; /* HARD_GATE#logH: match empty-state screenshot 2026-07-22 */
-  min-height: 9em !important;
-  max-height: 9em !important;
+  height: var(--h-global-log) !important; /* HARD_GATE#logH: match empty-state screenshot 2026-07-22 */
+  min-height: var(--h-global-log) !important;
+  max-height: var(--h-global-log) !important;
   overflow-x: hidden !important;
   overflow-y: auto !important;
   overscroll-behavior: contain !important;
@@ -3660,8 +3665,8 @@ button.desk-refresh-cta:hover,
 .card .card-surface-dual .log-box {
   flex: 1 1 auto !important;
   min-height: 11.55em !important;
-  max-height: 18.15em !important;
-  height: 18.15em !important;
+  max-height: var(--h-card-log-min) !important;
+  height: var(--h-card-log-min) !important;
   margin-bottom: 0 !important;
   padding-bottom: 0 !important;
   box-sizing: border-box !important;
@@ -3670,7 +3675,7 @@ button.desk-refresh-cta:hover,
 .card .log-box:empty,
 .card .log-box .log-empty,
 .card .log-viewport:empty {
-  min-height: 18.15em !important;
+  min-height: var(--h-card-log-min) !important;
 }
 
 /* ========== HARD_GATE#852: log flush bottom + desk head/table full columns ========== */
@@ -3723,9 +3728,9 @@ button.desk-refresh-cta:hover,
 .card .card-surface-log-only .log-box,
 .card .card-surface-dual .log-box {
   flex: 0 0 auto !important;
-  min-height: 18.15em !important;
-  max-height: 18.15em !important;
-  height: 18.15em !important;
+  min-height: var(--h-card-log-min) !important;
+  max-height: var(--h-card-log-min) !important;
+  height: var(--h-card-log-min) !important;
   margin: 0 !important;
   padding-bottom: 0 !important;
   box-sizing: border-box !important;
@@ -3733,8 +3738,8 @@ button.desk-refresh-cta:hover,
 .card .log-box:empty,
 .card .log-box .log-empty,
 .card .log-viewport:empty {
-  min-height: 18.15em !important;
-  height: 18.15em !important;
+  min-height: var(--h-card-log-min) !important;
+  height: var(--h-card-log-min) !important;
 }
 
 /* Composer desk head: title + sub not glued, full width */
@@ -3999,10 +4004,10 @@ button.desk-refresh-cta:hover,
 .card .card-surface-dual .log-box,
 .card .card-surface-dual .log-viewport,
 .card .card-surface-log-only .log-box {
-  flex: 0 0 18.15em !important;
-  min-height: 18.15em !important;
-  height: 18.15em !important;
-  max-height: 18.15em !important;
+  flex: 0 0 var(--h-card-log-min) !important;
+  min-height: var(--h-card-log-min) !important;
+  height: var(--h-card-log-min) !important;
+  max-height: var(--h-card-log-min) !important;
   box-sizing: border-box !important;
   overflow: auto !important;
   margin-bottom: 12px !important;
@@ -4025,7 +4030,7 @@ button.desk-refresh-cta:hover,
 }
 
 
-/* ========== HARD_GATE#854: lock card/log size to #852 (32em/18.15em); empty must not shrink ========== */
+/* ========== HARD_GATE#854: lock card/log size to #852 (32em/var(--h-card-log-min)); empty must not shrink ========== */
 .cards .card,
 #cards .card,
 .card-grid .card {
@@ -4059,12 +4064,12 @@ button.desk-refresh-cta:hover,
 .card .card-surface-log-only .log-viewport,
 .card .card-surface-log .log-box,
 .card .card-surface-log .log-viewport {
-  flex: 0 0 18.15em !important;
+  flex: 0 0 var(--h-card-log-min) !important;
   flex-grow: 0 !important;
   flex-shrink: 0 !important;
-  min-height: 18.15em !important;
-  height: 18.15em !important;
-  max-height: 18.15em !important;
+  min-height: var(--h-card-log-min) !important;
+  height: var(--h-card-log-min) !important;
+  max-height: var(--h-card-log-min) !important;
   box-sizing: border-box !important;
   overflow-x: hidden !important;
   overflow-y: auto !important;
@@ -4075,9 +4080,9 @@ button.desk-refresh-cta:hover,
 .card .log-box:empty,
 .card .log-viewport:has(.log-empty-fill),
 .card .log-viewport:has(.log-line-empty) {
-  min-height: 18.15em !important;
-  height: 18.15em !important;
-  max-height: 18.15em !important;
+  min-height: var(--h-card-log-min) !important;
+  height: var(--h-card-log-min) !important;
+  max-height: var(--h-card-log-min) !important;
 }
 .card .log-empty-fill,
 .card .log-line-empty,
@@ -4183,12 +4188,12 @@ article.card > .card-surface.card-surface-log-only {
 .card .card-surface-log-only .log-box.log-viewport,
 .card .log-box.log-viewport,
 .card .log-viewport.log-box {
-  flex: 0 0 18.15em !important;
+  flex: 0 0 var(--h-card-log-min) !important;
   flex-grow: 0 !important;
   flex-shrink: 0 !important;
-  min-height: 18.15em !important;
-  height: 18.15em !important;
-  max-height: 18.15em !important;
+  min-height: var(--h-card-log-min) !important;
+  height: var(--h-card-log-min) !important;
+  max-height: var(--h-card-log-min) !important;
   margin: 0 !important;
   margin-bottom: 0 !important;
   padding-bottom: 0 !important;
@@ -4204,10 +4209,10 @@ article.card > .card-surface.card-surface-log-only {
 .card .log-box.log-viewport:empty,
 .card .log-box.log-viewport:has(.log-empty-fill),
 .card .log-box.log-viewport:has(.log-line-empty) {
-  flex: 0 0 18.15em !important;
-  min-height: 18.15em !important;
-  height: 18.15em !important;
-  max-height: 18.15em !important;
+  flex: 0 0 var(--h-card-log-min) !important;
+  min-height: var(--h-card-log-min) !important;
+  height: var(--h-card-log-min) !important;
+  max-height: var(--h-card-log-min) !important;
 }
 
 .card .log-empty-fill,
@@ -4226,7 +4231,7 @@ article.card > .card-surface.card-surface-log-only {
 }
 
 /* ========== HARD_GATE#856: fit log panel INSIDE dual; bottom gap=title top 12px; no em-on-12px overflow ========== */
-/* Measured fail #855: log-box 18.15em @ font-size 12px => 217.8px; panel 250 > dual 218 => clip/overflow.
+/* Measured fail #855: log-box var(--h-card-log-min) @ font-size 12px => 217.8px; panel 250 > dual 218 => clip/overflow.
    Fix: dual/panel/box flex-fill remaining surface; heights in px anchored to layout not log font-size.
    Empty/clear keeps same box via flex parent chain + min-height px floor. */
 
@@ -4331,7 +4336,7 @@ article.card,
   flex-shrink: 0 !important;
 }
 
-/* beat HARD_GATE#855 18.15em @ 12px — use flex fill + px floor so clear won't collapse */
+/* beat HARD_GATE#855 var(--h-card-log-min) @ 12px — use flex fill + px floor so clear won't collapse */
 .card .log-panel.card-log-expanded .log-box,
 .card .log-panel.card-log-expanded .log-box.log-viewport,
 .card .log-panel .log-box.log-viewport,
@@ -5035,7 +5040,7 @@ html body article.card .card-summary strong,
   .top-actions .btn {
     width: 100%;
     justify-content: center;
-    min-height: 36px;
+    min-height: var(--h-control);
     padding: 6px 8px;
     font-size: 13px;
   }
@@ -5052,7 +5057,7 @@ html body article.card .card-summary strong,
   .top-actions .btn {
     width: 100%;
     justify-content: center;
-    min-height: 36px;
+    min-height: var(--h-control);
     padding: 6px 8px;
     font-size: 13px;
   }
@@ -5294,8 +5299,8 @@ html body article.card .card-summary strong,
   color: var(--text, #18181b);
 }
 #token-modal .modal-x {
-  min-width: 36px;
-  height: 36px;
+  min-width: var(--h-control);
+  height: var(--h-control);
   padding: 0;
   font-size: 1.2rem;
   line-height: 1;

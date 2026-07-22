@@ -80,7 +80,15 @@
     try {
       if (v) localStorage.setItem(TOKEN_KEY, v);
       else localStorage.removeItem(TOKEN_KEY);
-    } catch (_) {}
+    } catch (_) { logCatch("catch", _); }
+  }
+
+  function logCatch(tag, e) {
+    try {
+      if (typeof console !== "undefined" && console.debug) {
+        console.debug("[cmcc-webui]", tag, e);
+      }
+    } catch (_ignore) { logCatch("catch", _ignore); }
   }
 
 
@@ -213,7 +221,7 @@
     if (focusEl) {
       try {
         focusEl.focus();
-      } catch (_) {}
+      } catch (_) { logCatch("catch", _); }
     }
     updateTokenBtn();
   }
@@ -254,16 +262,16 @@
     hideAccessGate();
     try {
       await loadSys();
-    } catch (_) {}
+    } catch (_) { logCatch("catch", _); }
     try {
       await loadProfiles(true);
-    } catch (_) {}
+    } catch (_) { logCatch("catch", _); }
     try {
       connectSSE();
-    } catch (_) {}
+    } catch (_) { logCatch("catch", _); }
     try {
       startPolling();
-    } catch (_) {}
+    } catch (_) { logCatch("catch", _); }
     updateTokenBtn();
   }
 
@@ -502,7 +510,7 @@
       try {
         await loadSys();
         await loadProfiles(true);
-      } catch (_) {}
+      } catch (_) { logCatch("catch", _); }
     } catch (e) {
       setTokenModalErr(humanError(e, "关闭鉴权失败"));
     }
@@ -518,14 +526,14 @@
     if (enable && !enable.dataset.bound) {
       enable.dataset.bound = "1";
       enable.addEventListener("click", function () {
-        tokenModalSubmit("enable").catch(function () {});
+        tokenModalSubmit("enable").catch(function (err) { logCatch("promise", err); });
       });
     }
     const change = $("#token-modal-change");
     if (change && !change.dataset.bound) {
       change.dataset.bound = "1";
       change.addEventListener("click", function () {
-        tokenModalSubmit("change").catch(function () {});
+        tokenModalSubmit("change").catch(function (err) { logCatch("promise", err); });
       });
     }
     const clearBtn = $("#token-modal-clear");
@@ -537,289 +545,7 @@
     if (dis && !dis.dataset.bound) {
       dis.dataset.bound = "1";
       dis.addEventListener("click", function () {
-        tokenModalDisable().catch(function () {});
-      });
-    }
-    const modal = $("#token-modal");
-    if (modal && !modal.dataset.boundBackdrop) {
-      modal.dataset.boundBackdrop = "1";
-      modal.addEventListener("click", function (ev) {
-        if (ev.target === modal) hideTokenModal();
-      });
-    }
-  }
-
-  async function openTokenDialog() {
-    // gate6: need login gate when server auth on but no local token
-    await refreshAuthStatus();
-    if ((state.authEnabled || state.tokenRequired) && !getToken()) {
-      showAccessGate("login");
-      return;
-    }
-    showTokenModal();
-  }
-
-  
-  async function submitGateSetupSkip() {
-    // Leave auth disabled: enter console without forcing setup.
-    setGateErr("", "setup");
-    const skipBtn = $("#gate-setup-skip");
-    if (skipBtn) skipBtn.disabled = true;
-    try {
-      try {
-        await api("/api/auth/disable", { method: "POST", body: "{}" });
-      } catch (e) {
-        // API may not exist; treat as soft-skip and just enter UI.
-      }
-      try { setToken(""); } catch (e) {}
-      state.setupRequired = false;
-      state.tokenRequired = false;
-      state.authEnabled = false;
-      state.authSource = "none";
-      updateTokenBtn();
-      hideAccessGate();
-      toast("已跳过访问密钥，控制台可直接使用", "ok");
-      try {
-        await loadSys();
-        await loadProfiles(true);
-      } catch (e) {}
-    } catch (e) {
-      setGateErr((e && e.message) || String(e), "setup");
-    } finally {
-      if (skipBtn) skipBtn.disabled = false;
-    }
-  }
-
-async function submitGateLogin() {
-    setGateErr("", "login");
-    const input = $("#gate-login-input");
-    const token = (input && input.value || "").trim();
-    if (!token) {
-      setGateErr("请输入访问密钥", "login");
-      return;
-    }
-    const btn = $("#gate-login-ok");
-    if (btn) btn.disabled = true;
-    try {
-      await api("/api/auth/login", {
-        method: "POST",
-        body: JSON.stringify({ token: token }),
-      });
-      setToken(token);
-      state.tokenRequired = true;
-      updateTokenBtn();
-      hideAccessGate();
-      toast("已进入控制台");
-      pushGlobal("访问密钥验证通过");
-      try {
-        await loadSys();
-        await loadProfiles(true);
-      } catch (e2) {
-        toast(humanError(e2, "加载账号失败"), true);
-      }
-    } catch (e) {
-      setGateErr(humanError(e, "访问密钥错误"), "login");
-    } finally {
-      if (btn) btn.disabled = false;
-    }
-  }
-
-  function setTokenModalErr(msg) {
-    const el = $("#token-modal-err");
-    if (el) el.textContent = msg || "";
-  }
-
-  function hideTokenModal() {
-    const m = $("#token-modal");
-    if (!m) return;
-    m.classList.add("hidden");
-    m.hidden = true;
-    m.setAttribute("aria-hidden", "true");
-    setTokenModalErr("");
-  }
-
-  function showTokenModal() {
-    const m = $("#token-modal");
-    if (!m) {
-      // fallback: if HTML not deployed yet
-      toast("令牌管理面板未加载，请刷新页面", true);
-      return;
-    }
-    m.classList.remove("hidden");
-    m.hidden = false;
-    m.setAttribute("aria-hidden", "false");
-    const cur = getToken() || "";
-    const curIn = $("#token-modal-current");
-    const newIn = $("#token-modal-new");
-    if (curIn) curIn.value = cur;
-    if (newIn) newIn.value = "";
-    const authOn = !!(state.authEnabled || state.tokenRequired);
-    const st = $("#token-modal-status");
-    if (st) {
-      if (authOn) {
-        st.textContent =
-          "服务器鉴权：已启用" +
-          (state.authSource ? "（" + state.authSource + "）" : "") +
-          (cur ? " · 本机已保存密钥" : " · 本机无密钥") +
-          "。改密请填「新密钥」。";
-      } else {
-        st.textContent =
-          "服务器鉴权：已关闭。" +
-          (cur
-            ? "本机已有密钥，点「启用密钥」即可打开服务器鉴权（不必再填新密钥）。"
-            : "在「当前密钥」填入要启用的密钥后点「启用密钥」；若要换成别的再填「新密钥」并用「修改密钥」。");
-      }
-    }
-    // 两个按钮始终可见：启用=开鉴权；修改=改成新密钥
-    const enBtn = $("#token-modal-enable");
-    const chBtn = $("#token-modal-change");
-    if (enBtn) {
-      enBtn.hidden = false;
-      enBtn.style.display = "";
-      enBtn.disabled = authOn; // 已启用时只能改密/关闭
-      enBtn.title = authOn ? "服务器已启用鉴权，请用「修改密钥」或先关闭鉴权" : "用「当前密钥」启用服务器鉴权";
-    }
-    if (chBtn) {
-      chBtn.hidden = false;
-      chBtn.style.display = "";
-      chBtn.disabled = false;
-      chBtn.title = authOn ? "校验当前密钥后写入新密钥" : "写入新密钥并启用服务器鉴权";
-    }
-    setTokenModalErr("");
-  }
-
-  async function tokenModalSubmit(mode) {
-    setTokenModalErr("");
-    const curIn = $("#token-modal-current");
-    const newIn = $("#token-modal-new");
-    const cur = ((curIn && curIn.value) || getToken() || "").trim();
-    const tNew = ((newIn && newIn.value) || "").trim();
-    const authOn = !!(state.authEnabled || state.tokenRequired);
-
-    // 启用 = 打开服务器鉴权：优先用「当前密钥」/本机已存密钥，不要求填新密钥
-    // 修改 = 改成「新密钥」（鉴权已开时要校验当前密钥；未开时等同设定并启用）
-    let writeToken = "";
-    if (mode === "enable") {
-      if (authOn) {
-        setTokenModalErr("服务器已启用鉴权，请用「修改密钥」或先「关闭服务器鉴权」");
-        return;
-      }
-      writeToken = cur;
-      if (!writeToken || writeToken.length < 4 || /\s/.test(writeToken)) {
-        setTokenModalErr("启用鉴权请在「当前密钥」填入至少 4 位无空格密钥（本机已保存会自动填充）");
-        return;
-      }
-    } else {
-      // change
-      writeToken = tNew;
-      if (!writeToken || writeToken.length < 4 || /\s/.test(writeToken)) {
-        setTokenModalErr("修改密钥请在「新密钥」填入至少 4 位无空格密钥");
-        return;
-      }
-      if (authOn && !cur) {
-        setTokenModalErr("修改密钥需要填写当前密钥");
-        return;
-      }
-    }
-    try {
-      await api("/api/auth/change", {
-        method: "POST",
-        body: JSON.stringify({
-          currentToken: cur || undefined,
-          oldToken: cur || undefined,
-          newToken: writeToken,
-          token: writeToken,
-        }),
-      });
-      setToken(writeToken);
-      state.tokenRequired = true;
-      state.authEnabled = true;
-      state.setupRequired = false;
-      updateTokenBtn();
-      hideTokenModal();
-      toast(mode === "enable" ? "服务器访问鉴权已启用" : "服务器访问密钥已修改");
-      pushGlobal(mode === "enable" ? "访问鉴权已启用" : "访问密钥已修改");
-      await refreshAuthStatus();
-    } catch (e) {
-      setTokenModalErr(humanError(e, mode === "enable" ? "启用密钥失败" : "修改密钥失败"));
-    }
-  }
-
-  function tokenModalClearLocal() {
-    setToken("");
-    updateTokenBtn();
-    hideTokenModal();
-    toast("已清除本机密钥");
-    if (state.authEnabled || state.tokenRequired) {
-      showAccessGate("login");
-    }
-  }
-
-  async function tokenModalDisable() {
-    setTokenModalErr("");
-    const curIn = $("#token-modal-current");
-    const cur = ((curIn && curIn.value) || getToken() || "").trim();
-    if (!window.confirm("确认关闭服务器访问鉴权？关闭后任何人可打开控制台。")) {
-      return;
-    }
-    try {
-      await api("/api/auth/disable", {
-        method: "POST",
-        body: JSON.stringify({
-          currentToken: cur || undefined,
-          oldToken: cur || undefined,
-          token: cur || undefined,
-        }),
-      });
-      setToken("");
-      state.tokenRequired = false;
-      state.authEnabled = false;
-      state.setupRequired = false;
-      updateTokenBtn();
-      hideTokenModal();
-      hideAccessGate();
-      toast("已关闭服务器鉴权");
-      pushGlobal("访问鉴权已关闭");
-      await refreshAuthStatus();
-      try {
-        await loadSys();
-        await loadProfiles(true);
-      } catch (_) {}
-    } catch (e) {
-      setTokenModalErr(humanError(e, "关闭鉴权失败"));
-    }
-  }
-
-  function wireTokenModal() {
-    const close = $("#token-modal-close");
-    if (close && !close.dataset.bound) {
-      close.dataset.bound = "1";
-      close.addEventListener("click", hideTokenModal);
-    }
-    const enable = $("#token-modal-enable");
-    if (enable && !enable.dataset.bound) {
-      enable.dataset.bound = "1";
-      enable.addEventListener("click", function () {
-        tokenModalSubmit("enable").catch(function () {});
-      });
-    }
-    const change = $("#token-modal-change");
-    if (change && !change.dataset.bound) {
-      change.dataset.bound = "1";
-      change.addEventListener("click", function () {
-        tokenModalSubmit("change").catch(function () {});
-      });
-    }
-    const clearBtn = $("#token-modal-clear");
-    if (clearBtn && !clearBtn.dataset.bound) {
-      clearBtn.dataset.bound = "1";
-      clearBtn.addEventListener("click", tokenModalClearLocal);
-    }
-    const dis = $("#token-modal-disable");
-    if (dis && !dis.dataset.bound) {
-      dis.dataset.bound = "1";
-      dis.addEventListener("click", function () {
-        tokenModalDisable().catch(function () {});
+        tokenModalDisable().catch(function (err) { logCatch("promise", err); });
       });
     }
     const modal = $("#token-modal");
@@ -864,9 +590,9 @@ async function submitGateLogin() {
       updateTokenBtn && updateTokenBtn();
       if (typeof toast === "function") toast("已跳过访问密钥，控制台可直接使用", "ok");
       if (typeof bootstrapAfterAuth === "function") {
-        try { await bootstrapAfterAuth(); } catch (e) {}
+        try { await bootstrapAfterAuth(); } catch (e) { logCatch("catch", e); }
       } else if (typeof refreshAll === "function") {
-        try { await refreshAll(); } catch (e) {}
+        try { await refreshAll(); } catch (e) { logCatch("catch", e); }
       }
     } catch (err) {
       setGateErr((err && err.message) || String(err), "setup");
@@ -921,21 +647,21 @@ function wireAccessGate() {
     if (setupSkip && !setupSkip.dataset.bound) {
       setupSkip.dataset.bound = "1";
       setupSkip.addEventListener("click", function () {
-        submitGateSetupSkip().catch(function () {});
+        submitGateSetupSkip().catch(function (err) { logCatch("promise", err); });
       });
     }
     const setupOk = $("#gate-setup-ok");
     if (setupOk && !setupOk.dataset.bound) {
       setupOk.dataset.bound = "1";
       setupOk.addEventListener("click", function () {
-        submitGateSetup().catch(function () {});
+        submitGateSetup().catch(function (err) { logCatch("promise", err); });
       });
     }
     const loginOk = $("#gate-login-ok");
     if (loginOk && !loginOk.dataset.bound) {
       loginOk.dataset.bound = "1";
       loginOk.addEventListener("click", function () {
-        submitGateLogin().catch(function () {});
+        submitGateLogin().catch(function (err) { logCatch("promise", err); });
       });
     }
     ["gate-setup-input", "gate-login-input"].forEach(function (id) {
@@ -945,8 +671,8 @@ function wireAccessGate() {
       el.addEventListener("keydown", function (ev) {
         if (ev.key === "Enter") {
           ev.preventDefault();
-          if (id === "gate-setup-input") submitGateSetup().catch(function () {});
-          else submitGateLogin().catch(function () {});
+          if (id === "gate-setup-input") submitGateSetup().catch(function (err) { logCatch("promise", err); });
+          else submitGateLogin().catch(function (err) { logCatch("promise", err); });
         }
       });
     });
@@ -1173,6 +899,69 @@ function wireAccessGate() {
     return null;
   }
 
+  /* HARD_GATE#R3 JobStore: single write path for jobs maps + derived profile.job* */
+  function _jobRank(st) {
+    const s = String(st || "").toLowerCase();
+    if (s === "running" || s === "alive" || s === "starting") return 3;
+    if (s === "pending") return 2;
+    if (s === "error" || s === "failed" || s === "fail") return 1;
+    return 0; // stopped/idle/unknown
+  }
+
+  /**
+   * Only mutator for state.jobsById / state.jobsByProfile.
+   * profile.jobStatus / jobId / job are derived here (not independent truth).
+   * opts.replace: no merge with prev (full snapshot from /api/jobs)
+   * opts.force: always win profile slot (bulk loadJobs)
+   */
+  function upsertJob(data, opts) {
+    opts = opts || {};
+    if (!data || typeof data !== "object") return null;
+    const jid = data.jobId || data.job_id || data.id || null;
+    const pid = data.profileId || data.profile_id || data.accountId || data.account_id || null;
+    if (!jid && !pid) return null;
+
+    const prev =
+      (jid && state.jobsById[jid]) ||
+      (pid && state.jobsByProfile[pid]) ||
+      null;
+    const merged = opts.replace
+      ? Object.assign({}, data)
+      : Object.assign({}, prev || {}, data);
+    if (jid) {
+      merged.id = merged.id || jid;
+      merged.jobId = merged.jobId || jid;
+      state.jobsById[jid] = merged;
+    }
+    if (pid) {
+      merged.profileId = merged.profileId || pid;
+      const prevProf = state.jobsByProfile[pid];
+      const sameJob =
+        prevProf &&
+        String(prevProf.id || prevProf.jobId || "") ===
+          String(merged.id || merged.jobId || jid || "");
+      if (
+        !prevProf ||
+        sameJob ||
+        _jobRank(merged.status) >= _jobRank(prevProf && prevProf.status) ||
+        opts.force
+      ) {
+        state.jobsByProfile[pid] = merged;
+      }
+      const chosen = state.jobsByProfile[pid] || merged;
+      const pSync = state.profiles.find(function (x) {
+        return x && x.id === pid;
+      });
+      if (pSync) {
+        pSync.jobStatus = chosen.status || merged.status || pSync.jobStatus;
+        pSync.jobId = chosen.id || chosen.jobId || jid || pSync.jobId;
+        if (!pSync.job || typeof pSync.job !== "object") pSync.job = {};
+        pSync.job = Object.assign({}, pSync.job, chosen);
+      }
+    }
+    return (pid && state.jobsByProfile[pid]) || merged;
+  }
+
   function resolveUserProtocol() {
     /* HARD_GATE#871c: user choice only — never force SCG globally */
     for (var i = 0; i < arguments.length; i++) {
@@ -1397,11 +1186,11 @@ function wireAccessGate() {
     // HARD_GATE#854: buffer + immediate paint (SSE must reappear after clear; 6s poll is backup)
     if (!pid || !line) return;
     const arr = state.logs[pid] || (state.logs[pid] = []);
-    try { patchCardDeskStatus(pid); } catch (_e) {}
+    try { patchCardDeskStatus(pid); } catch (_e) { logCatch("catch", _e); }
     const entry = { at: at || new Date().toISOString(), line: String(line) };
     arr.push(entry);
     if (arr.length > 300) state.logs[pid] = arr.slice(-300);
-    try { patchCardDeskStatus(pid); } catch (_e) {}
+    try { patchCardDeskStatus(pid); } catch (_e) { logCatch("catch", _e); }
     applyLogsToDom(pid, false);
   }
 
@@ -1771,7 +1560,7 @@ function wireAccessGate() {
     if (closeBtn && typeof closeBtn.focus === "function") {
       try {
         closeBtn.focus();
-      } catch (_) {}
+      } catch (_) { logCatch("catch", _); }
     }
   }
 
@@ -2214,7 +2003,7 @@ function wireAccessGate() {
       if (first) {
         try {
           first.focus();
-        } catch (_) {}
+        } catch (_) { logCatch("catch", _); }
       }
     }, 0);
   }
@@ -2240,11 +2029,11 @@ function wireAccessGate() {
         if (keepVal != null && el.type !== "password") {
           try {
             el.value = keepVal;
-          } catch (_) {}
+          } catch (_) { logCatch("catch", _); }
         }
         try {
           el.focus();
-        } catch (_) {}
+        } catch (_) { logCatch("catch", _); }
       }
     }
   }
@@ -2285,7 +2074,7 @@ function wireAccessGate() {
         $('.log-box[data-log="' + p.id + '"]');
       if (panel) panel.scrollTop = panel.scrollHeight;
       if (!state.logs[p.id] || !state.logs[p.id].length) {
-        loadLogs(p.id).catch(function () {});
+        loadLogs(p.id).catch(function (err) { logCatch("promise", err); });
       } else {
         applyLogsToDom(p.id, true);
       }
@@ -2385,28 +2174,14 @@ function setComposerMsg(text, kind) {
       const data = await api("/api/jobs");
       const jobs = (data && data.jobs) || data || [];
       const list = Array.isArray(jobs) ? jobs : [];
+      // HARD_GATE#R3: wipe then single-writer rebuild
       state.jobsById = Object.create(null);
       state.jobsByProfile = Object.create(null);
-      function _jobRank(st) {
-        const s = String(st || "").toLowerCase();
-        if (s === "running" || s === "alive" || s === "starting") return 3;
-        if (s === "pending") return 2;
-        if (s === "error" || s === "failed" || s === "fail") return 1;
-        return 0; // stopped/idle/unknown — never overwrite a better job
-      }
       for (let i = 0; i < list.length; i++) {
-        const j = list[i] || {};
-        const jid = j.id || j.jobId || j.job_id;
-        if (jid) state.jobsById[jid] = j;
-        const pid = j.profileId || j.profile_id || j.accountId || j.account_id;
-        if (!pid) continue;
-        const prev = state.jobsByProfile[pid];
-        if (!prev || _jobRank(j.status) >= _jobRank(prev.status)) {
-          state.jobsByProfile[pid] = j;
-        }
+        upsertJob(list[i] || {}, { replace: true, force: true });
       }
-    } catch (_) {
-      /* jobs optional; card falls back to profile fields */
+    } catch (e) {
+      logCatch("loadJobs", e);
     }
   }
 
@@ -2449,12 +2224,39 @@ function setComposerMsg(text, kind) {
         return;
       }
       state.logs[pid] = lines;
-    try { patchCardDeskStatus(pid); } catch (_e) {}
+    try { patchCardDeskStatus(pid); } catch (_e) { logCatch("catch", _e); }
       const nextFp = logsFingerprint(lines);
       if (toastOk || prevFp !== nextFp) applyLogsToDom(pid, !!toastOk);
       if (toastOk) toast("日志已刷新");
     } catch (e) {
       pushGlobal("[" + pid + "] 日志读取失败: " + humanError(e), "error");
+    }
+  }
+
+  /** HARD_GATE#R2: one round-trip for many card logs; keeps #854/#855 empty+fingerprint rules. */
+  async function loadLogsBatch(pids, toastOk) {
+    const ids = (pids || []).filter(Boolean);
+    if (!ids.length) return;
+    try {
+      const q = ids.map(function (x) { return encodeURIComponent(x); }).join(",");
+      const data = await api("/api/logs/batch?profileIds=" + q + "&limit=200");
+      const bag = (data && data.logs) || {};
+      ids.forEach(function (pid) {
+        const lines = Array.isArray(bag[pid]) ? bag[pid] : [];
+        const prev = state.logs[pid] || [];
+        if (!toastOk && (!lines || !lines.length) && prev.length) {
+          // empty API must not erase fresher local SSE buffer
+          return;
+        }
+        const prevFp = logsFingerprint(prev);
+        state.logs = state.logs || {};
+        state.logs[pid] = lines;
+        const nextFp = logsFingerprint(lines);
+        if (toastOk || prevFp !== nextFp) applyLogsToDom(pid, !!toastOk);
+      });
+      if (toastOk) toast("日志已刷新");
+    } catch (e) {
+      pushGlobal("批量日志读取失败: " + humanError(e), "error");
     }
   }
 
@@ -2480,7 +2282,7 @@ function setComposerMsg(text, kind) {
           chip.setAttribute("title", st);
         }
       }
-    } catch (e) {}
+    } catch (e) { logCatch("catch", e); }
     const fp = logsFingerprint(state.logs[pid]);
     const panel =
       $('.log-viewport[data-log="' + pid + '"]') ||
@@ -2530,7 +2332,7 @@ function setComposerMsg(text, kind) {
     if (state.es) {
       try {
         state.es.close();
-      } catch (_) {}
+      } catch (_) { logCatch("catch", _); }
       state.es = null;
     }
     loadSys().then(function () {
@@ -2547,7 +2349,7 @@ function setComposerMsg(text, kind) {
     // Prefer public auth status so gate can render even before local token.
     try {
       await refreshAuthStatus();
-    } catch (_) {}
+    } catch (_) { logCatch("catch", _); }
     try {
       const info = await api("/api/system/info");
       if (info) {
@@ -2621,7 +2423,7 @@ function setComposerMsg(text, kind) {
       setTimeout(function () {
         try {
           cancel.focus();
-        } catch (_) {}
+        } catch (_) { logCatch("catch", _); }
       }, 0);
       const done = function (v) {
         modal.classList.add("hidden");
@@ -2862,7 +2664,7 @@ function setComposerMsg(text, kind) {
     state.logs[pid] = [];
     state._logClearedAt = state._logClearedAt || {};
     state._logClearedAt[pid] = Date.now();
-    try { applyLogsToDom(pid, true); } catch (_e) {}
+    try { applyLogsToDom(pid, true); } catch (_e) { logCatch("catch", _e); }
     if (state.logModalPid === pid) {
       const full =
         document.querySelector("#log-full-body") ||
@@ -2901,7 +2703,7 @@ function setComposerMsg(text, kind) {
       pushGlobal("[" + pid + "] 已清除保活线程");
       state.cardMsg[pid] = "";
       await loadProfiles();
-      await loadLogs(pid).catch(function () {});
+      await loadLogs(pid).catch(function (err) { logCatch("promise", err); });
     } catch (e) {
       // No running job is still a successful "clear" from user POV.
       const code = e && (e.code || e.status);
@@ -2914,7 +2716,7 @@ function setComposerMsg(text, kind) {
         toast("当前无运行中的保活线程");
         pushGlobal("[" + pid + "] 清除线程：当前无运行任务");
         state.cardMsg[pid] = "";
-        await loadProfiles().catch(function () {});
+        await loadProfiles().catch(function (err) { logCatch("promise", err); });
       } else {
         const msg = humanError(e, "清除线程失败");
         state.cardMsg[pid] = msg;
@@ -2970,29 +2772,6 @@ function setComposerMsg(text, kind) {
     }
   }
 
-
-  function applyOfficialFromDesktop(target, desk) {
-    /* gate6: never overwrite user-selected protocol; only record official hint */
-    if (!target || !desk) return target;
-    const hint = desk.protocolHint || desk.protocol_hint || desk.protocol || "";
-    const spu = desk.spuCode || desk.spu_code || "";
-    if (hint) {
-      const hp = String(hint).toUpperCase();
-      if (hp === "ZTE" || hp === "SCG" || hp === "SANGFOR") {
-        const off = hp === "SANGFOR" ? "SCG" : hp;
-        target.lastOfficialProtocol = off;
-        target.protocolHint = off;
-        // only seed protocol when user never chose one
-        if (!target.protocol) target.protocol = off;
-      }
-    }
-    if (spu) target.spuCode = spu;
-    if (!target.desktopLabel) {
-      target.desktopLabel =
-        desk.desktopLabel || desk.name || desk.label || target.userServiceId || "";
-    }
-    return target;
-  }
 
   async function onDesktops(pid) {
     state.busy[pid] = true;
@@ -3568,7 +3347,7 @@ function setComposerMsg(text, kind) {
             applyOfficialFromDesktop(state.drafts[pid], only);
             fillComposerDesktopSelect(list, c.userServiceId);
           }
-        } catch (_) {}
+        } catch (_) { logCatch("catch", _); }
       }
       ensureDraft(pid);
       state.drafts[pid].username = c.username;
@@ -3778,7 +3557,7 @@ function setComposerMsg(text, kind) {
           closeConfigModal();
         } else {
           openConfigModal(pid);
-          loadLogs(pid).catch(function () {});
+          loadLogs(pid).catch(function (err) { logCatch("promise", err); });
         }
         return;
       }
@@ -3800,7 +3579,7 @@ function setComposerMsg(text, kind) {
         api("/api/profiles/" + encodeURIComponent(pid) + "/logs", { method: "DELETE" })
           .then(function (data) {
             state.logs[pid] = [];
-    try { patchCardDeskStatus(pid); } catch (_e) {}
+    try { patchCardDeskStatus(pid); } catch (_e) { logCatch("catch", _e); }
             state._logClearedAt = state._logClearedAt || {};
             state._logClearedAt[pid] = Date.now();
             applyLogsToDom(pid, true);
@@ -3856,7 +3635,7 @@ function setComposerMsg(text, kind) {
       ev.preventDefault();
       if (ev.stopPropagation) ev.stopPropagation();
       openLogModal(pid);
-      loadLogs(pid).catch(function () {});
+      loadLogs(pid).catch(function (err) { logCatch("promise", err); });
     });
 
     // Modal is outside #timeline — bind separately (OPS#337)
@@ -3928,50 +3707,8 @@ function setComposerMsg(text, kind) {
       (jid && state.jobsById[jid]) ||
       (pid && state.jobsByProfile[pid]) ||
       null;
-    const merged = Object.assign({}, prev || {}, data);
-    if (jid) {
-      merged.id = merged.id || jid;
-      merged.jobId = merged.jobId || jid;
-      state.jobsById[jid] = merged;
-    }
-    if (pid) {
-      merged.profileId = merged.profileId || pid;
-      // Prefer running/pending over older stopped events for same profile.
-      const prevProf = state.jobsByProfile[pid];
-      const prevRank = (function (st) {
-        const s = String(st || "").toLowerCase();
-        if (s === "running" || s === "alive" || s === "starting") return 3;
-        if (s === "pending") return 2;
-        if (s === "error" || s === "failed" || s === "fail") return 1;
-        return 0;
-      })(prevProf && prevProf.status);
-      const nextRank = (function (st) {
-        const s = String(st || "").toLowerCase();
-        if (s === "running" || s === "alive" || s === "starting") return 3;
-        if (s === "pending") return 2;
-        if (s === "error" || s === "failed" || s === "fail") return 1;
-        return 0;
-      })(merged.status);
-      // Always accept if same job id, or better/equal rank, or no prev.
-      const sameJob =
-        prevProf &&
-        String(prevProf.id || prevProf.jobId || "") ===
-          String(merged.id || merged.jobId || jid || "");
-      if (!prevProf || sameJob || nextRank >= prevRank) {
-        state.jobsByProfile[pid] = merged;
-      }
-      // Keep profile fields in sync so statusOf/poll never drift.
-      const pSync = state.profiles.find(function (x) {
-        return x && x.id === pid;
-      });
-      if (pSync) {
-        const chosen = state.jobsByProfile[pid] || merged;
-        pSync.jobStatus = chosen.status || merged.status || pSync.jobStatus;
-        pSync.jobId = chosen.id || chosen.jobId || jid || pSync.jobId;
-        if (!pSync.job || typeof pSync.job !== "object") pSync.job = {};
-        pSync.job = Object.assign({}, pSync.job, chosen);
-      }
-    }
+    // HARD_GATE#R3: maps + profile.job* only via upsertJob
+    const merged = upsertJob(data) || Object.assign({}, prev || {}, data);
     const status = merged.status || data.status || "";
     const label = pid || jid || "?";
     // HARD_GATE#768-B: job status meta may hit global; keepalive round/detail stays card-only via pushCard
@@ -3999,7 +3736,7 @@ function setComposerMsg(text, kind) {
         });
         if (p) patchCardStatus(p.id);
       }
-    } catch (_) {}
+    } catch (_) { logCatch("catch", _); }
   }
 
   function applyJobLogEvent(data) {
@@ -4017,7 +3754,7 @@ function setComposerMsg(text, kind) {
       if (state.es) {
         try {
           state.es.close();
-        } catch (_) {}
+        } catch (_) { logCatch("catch", _); }
         state.es = null;
       }
       // EventSource cannot set Authorization headers; BE accepts ?token= (and Bearer on fetch).
@@ -4046,12 +3783,12 @@ function setComposerMsg(text, kind) {
       es.addEventListener("job_status", function (ev) {
         try {
           applyJobEvent(JSON.parse(ev.data));
-        } catch (_) {}
+        } catch (_) { logCatch("catch", _); }
       });
       es.addEventListener("job_log", function (ev) {
         try {
           applyJobLogEvent(JSON.parse(ev.data));
-        } catch (_) {}
+        } catch (_) { logCatch("catch", _); }
       });
       es.addEventListener("job_log_cleared", function (ev) {
         try {
@@ -4059,9 +3796,9 @@ function setComposerMsg(text, kind) {
           const pid = d.profileId || d.profile_id || "";
           if (!pid) return;
           state.logs[pid] = [];
-    try { patchCardDeskStatus(pid); } catch (_e) {}
+    try { patchCardDeskStatus(pid); } catch (_e) { logCatch("catch", _e); }
           applyLogsToDom(pid, true);
-        } catch (_) {}
+        } catch (_) { logCatch("catch", _); }
       });
       // HARD_GATE#global-run-log: backend page log fan-out (tunnel / multi-tab)
       es.addEventListener("global_log", function (ev) {
@@ -4069,7 +3806,7 @@ function setComposerMsg(text, kind) {
           const d = JSON.parse(ev.data) || {};
           if (!d.line) return;
           pushGlobalLocal(d.line, d.level || "info", d.at || "");
-        } catch (_) {}
+        } catch (_) { logCatch("catch", _); }
       });
       es.addEventListener("global_log_cleared", function () {
         state.globalLog = [];
@@ -4085,12 +3822,12 @@ function setComposerMsg(text, kind) {
           } else if (data && data.detail) {
             pushGlobal(String(data.detail), data.level || "info");
           }
-        } catch (_) {}
+        } catch (_) { logCatch("catch", _); }
       };
       es.onerror = function () {
         /* quiet reconnect by browser */
       };
-    } catch (_) {}
+    } catch (_) { logCatch("catch", _); }
   }
 
 
@@ -4136,7 +3873,7 @@ function setComposerMsg(text, kind) {
       if (!pid) return;
       ev.preventDefault();
       openLogModal(pid);
-      loadLogs(pid).catch(function () {});
+      loadLogs(pid).catch(function (err) { logCatch("promise", err); });
     },
     false
   );
@@ -4216,7 +3953,7 @@ function setComposerMsg(text, kind) {
             if (typeof selStart === "number" && el.setSelectionRange) {
               try {
                 el.setSelectionRange(selStart, selEnd);
-              } catch (_) {}
+              } catch (_) { logCatch("catch", _); }
             }
           }
         }
@@ -4236,20 +3973,16 @@ function setComposerMsg(text, kind) {
             );
           }
         });
-      } catch (_) {}
+      } catch (_) { logCatch("catch", _); }
     }, 4000);
 
-    setInterval(async function () {
+        setInterval(async function () {
       try {
-        // HARD_GATE#855 / #852: 6s log poll — applyLogsToDom only (fingerprint + modal), never full-render
+        // HARD_GATE#855 / #852 / R2: 6s log poll — single batch + applyLogsToDom (fingerprint), never full-render
         const list = state.profiles || [];
-        for (let i = 0; i < list.length; i++) {
-          const p = list[i];
-          if (!p || !p.id) continue;
-          await loadLogs(p.id).catch(function () {});
-        }
-        // open modal kept in sync via applyLogsToDom(state.logModalPid)
-      } catch (_) {}
+        const ids = list.map(function (p) { return p.id; }).filter(Boolean);
+        if (ids.length) await loadLogsBatch(ids, false);
+      } catch (_) { logCatch("catch", _); }
     }, 6000); /* HARD_GATE#856/#855/#852: card log poll 6s */
   }
 
@@ -4263,12 +3996,9 @@ function setComposerMsg(text, kind) {
           await loadJobs();
           await loadProfiles(false);
           const ids = state.profiles.map(function (p) { return p.id; });
-          await Promise.all(
-            ids.map(function (pid) {
-              return loadLogs(pid, false).catch(function () {});
-            })
-          );
-          await loadGlobalLogs().catch(function () {});
+          // HARD_GATE#R2: batch card logs (one request)
+          await loadLogsBatch(ids, false);
+          await loadGlobalLogs().catch(function (err) { logCatch("promise", err); });
           toast("已刷新账号与日志");
           pushGlobal("整页刷新完成 · " + ids.length + " 个账号");
         } catch (e) {
@@ -4548,7 +4278,7 @@ function setComposerMsg(text, kind) {
         state.sseNeedTokenLogged = false;
         connectSSE();
       }
-    } catch (_) {}
+    } catch (_) { logCatch("catch", _); }
   }
 
   async function boot() {
@@ -4571,7 +4301,7 @@ function setComposerMsg(text, kind) {
     // HARD_GATE#global-run-log: hydrate page log from backend (survives FE reload / tunnel)
     try {
       await loadGlobalLogs();
-    } catch (_) {}
+    } catch (_) { logCatch("catch", _); }
     pushGlobal("爱家移动云电脑就绪 · 多账户保活控制台");
     try {
       await loadProfiles(true);

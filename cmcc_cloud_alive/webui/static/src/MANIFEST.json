@@ -1,0 +1,62 @@
+[
+  {
+    "file": "01_header_state.js",
+    "start": 1,
+    "end": 41,
+    "lines": 41
+  },
+  {
+    "file": "02_dom_token_utils.js",
+    "start": 42,
+    "end": 144,
+    "lines": 103
+  },
+  {
+    "file": "03_auth_gate.js",
+    "start": 145,
+    "end": 690,
+    "lines": 546
+  },
+  {
+    "file": "04_api_status.js",
+    "start": 691,
+    "end": 901,
+    "lines": 211
+  },
+  {
+    "file": "05_jobstore.js",
+    "start": 902,
+    "end": 1053,
+    "lines": 152
+  },
+  {
+    "file": "06_logs_dom.js",
+    "start": 1054,
+    "end": 1687,
+    "lines": 634
+  },
+  {
+    "file": "07_card_html.js",
+    "start": 1688,
+    "end": 2171,
+    "lines": 484
+  },
+  {
+    "file": "08_data_loaders.js",
+    "start": 2172,
+    "end": 2404,
+    "lines": 233
+  },
+  {
+    "file": "09_actions.js",
+    "start": 2405,
+    "end": 3695,
+    "lines": 1291
+  },
+  {
+    "file": "10_sse_boot.js",
+    "start": 3696,
+    "end": 4332,
+    "lines": 637
+  }
+]

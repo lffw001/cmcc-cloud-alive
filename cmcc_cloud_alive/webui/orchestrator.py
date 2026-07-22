@@ -729,6 +729,23 @@ class Orchestrator:
                 return sticky_lines[-limit:]
             return []
 
+    def recent_logs_batch(
+        self,
+        profile_ids: List[str],
+        limit: int = 100,
+    ) -> Dict[str, List[Dict[str, str]]]:
+        """HARD_GATE#R2: multi-profile card logs in one call (poll batch).
+
+        Each profile is resolved via recent_logs (sticky + active job merge).
+        """
+        out: Dict[str, List[Dict[str, str]]] = {}
+        for raw in profile_ids or []:
+            pid = str(raw or "").strip()
+            if not pid:
+                continue
+            out[pid] = self.recent_logs(profile_id=pid, limit=limit)
+        return out
+
     def clear_logs(
         self,
         job_id: Optional[str] = None,

@@ -1,0 +1,1715 @@
+"""HTTP handlers for system/auth already split; profiles/jobs/logs/system routes."""
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+import re
+import time
+import uuid
+from pathlib import Path
+from typing import Any, AsyncIterator, Dict, List, Optional
+
+from starlette.requests import Request
+from starlette.responses import FileResponse, JSONResponse, Response, StreamingResponse
+
+from cmcc_cloud_alive.webui.common import (
+    _STATIC_DIR,
+    _DEFAULT_DURATION_SEC,
+    _DEFAULT_INTERVAL_SEC,
+    _DEFAULT_TRAFFIC_SEC,
+    _data_dir,
+    _mask_username,
+    _now_iso,
+    _parse_positive_int,
+    api_error,
+    parse_job_timing_fields,
+    profiles_dir,
+    redact_obj,
+)
+from cmcc_cloud_alive.webui.orch_runtime import ORCH
+
+_SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def _safe_profile_id(name: str) -> str:
+    name = (name or "").strip().replace(" ", "-")
+    name = _SAFE_NAME.sub("-", name).strip("-._")
+    if not name:
+        name = "profile"
+    return name[:60]
+
+
+def _profile_path(profile_id: str) -> Path:
+    return profiles_dir() / f"{profile_id}.json"
+
+
+# HARD_GATE#868: same account shares one token/session state (like interactive).
+# Card profile JSON keeps UI meta + selected userServiceId; live child uses acct_*.json.
+# userId/isSubAccount/loginMode MUST sync: checkToken needs X-SOHO-UserId; re-login
+# path uses isSubAccount/loginMode to pick sub vs main password login (4305/90020176).
+_SHARED_ACCOUNT_KEYS = (
+    "username",
+    "password",
+    "passwordSavedAt",
+    "sohoToken",
+    "token",
+    "userId",
+    "phone",
+    "isSubAccount",
+    "loginMode",
+    "isLogined",
+    "deviceId",
+    "device_id",
+    "clientProfile",
+    "clientId",
+    "lastLoginStatus",
+    "lastLoginAttemptAt",
+    "lastLoginError",
+)
+
+
+def _account_key(username: str) -> str:
+    return _safe_profile_id(username or "unknown")
+
+
+def _shared_account_path(username: str) -> Path:
+    return profiles_dir() / f"acct_{_account_key(username)}.json"
+
+
+def _is_shared_account_file(path: Path) -> bool:
+    return path.name.startswith("acct_") and path.suffix == ".json"
+
+
+def _sync_shared_account(state: Dict[str, Any]) -> Optional[Path]:
+    """Merge session fields into acct_<user>.json; return shared path or None.
+
+    HARD_GATE#868: same account shares one token. Stale per-card tokens must
+    NOT clobber a good shared token on start/hydrate. Token overwrite is only
+    allowed when the card just established a session (login path), or shared
+    has no token yet.
+    """
+    username = str(state.get("username") or state.get("phone") or "").strip()
+    if not username:
+        return None
+    shared = _shared_account_path(username)
+    existing = _read_state(shared) if shared.is_file() else {}
+    merged = dict(existing) if isinstance(existing, dict) else {}
+
+    token_keys = ("sohoToken", "token")
+    device_keys = ("deviceId", "device_id")
+
+    # Non-token shared keys: non-empty card value wins (except deviceId below).
+    for k in _SHARED_ACCOUNT_KEYS:
+        if k in token_keys or k in device_keys:
+            continue
+        if k in state and state.get(k) not in (None, ""):
+            merged[k] = state[k]
+
+    # deviceId: prefer stable shared value so dual cards don't mint two devices.
+    for dk in device_keys:
+        card_dev = state.get(dk)
+        shared_dev = merged.get(dk)
+        if shared_dev in (None, "") and card_dev not in (None, ""):
+            merged[dk] = card_dev
+        # else keep shared / existing
+
+    # Token policy: protect shared sohoToken from stale card overwrite.
+    status = str(state.get("lastLoginStatus") or "")
+    fresh_login = status in (
+        "session-established",
+        "session-present",
+        "live-ok-no-token",
+    )
+    for tk in token_keys:
+        card_tok = state.get(tk)
+        if card_tok in (None, ""):
+            continue
+        shared_tok = merged.get(tk)
+        if shared_tok in (None, "") or card_tok == shared_tok or fresh_login:
+            merged[tk] = card_tok
+        # else keep shared_tok (card is stale / partial)
+
+    # Prefer non-empty token from either side (fill holes only).
+    for tk in token_keys:
+        if not merged.get(tk) and state.get(tk):
+            merged[tk] = state[tk]
+
+    merged["username"] = username
+    merged["updatedAt"] = _now_iso()
+    merged["sharedAccount"] = True
+    _write_state(shared, merged)
+    return shared
+
+
+
+def _normalize_client_profile(value: Any, default: str = "linux") -> str:
+    """Accept linux|windows|mac (case-insensitive); invalid → default."""
+    v = str(value or "").strip().lower()
+    if v in ("linux", "windows", "mac"):
+        return v
+    return default
+
+
+def _apply_client_profile_from_body(state: Dict[str, Any], body: Optional[Dict[str, Any]]) -> bool:
+    """If body carries clientProfile, write normalized value onto card state.
+
+    Returns True when state was changed.
+    """
+    if not isinstance(body, dict) or "clientProfile" not in body:
+        return False
+    raw = body.get("clientProfile")
+    if raw is None or str(raw).strip() == "":
+        return False
+    new_v = _normalize_client_profile(raw, default="")
+    if not new_v:
+        return False
+    old = _normalize_client_profile(state.get("clientProfile"), default="")
+    if old == new_v:
+        # still ensure canonical form
+        if state.get("clientProfile") != new_v:
+            state["clientProfile"] = new_v
+            return True
+        return False
+    state["clientProfile"] = new_v
+    return True
+
+
+def _hydrate_profile_from_shared(state: Dict[str, Any]) -> Dict[str, Any]:
+    """Fill missing token/password from shared account file (card keeps own usid)."""
+    username = str(state.get("username") or state.get("phone") or "").strip()
+    if not username:
+        return state
+    shared_path = _shared_account_path(username)
+    if not shared_path.is_file():
+        return state
+    shared = _read_state(shared_path)
+    if not shared:
+        return state
+    out = dict(state)
+    for k in _SHARED_ACCOUNT_KEYS:
+        if k in ("username",):
+            continue
+        if (not out.get(k)) and shared.get(k):
+            out[k] = shared[k]
+    return out
+
+
+def _resolve_live_state_path(profile_path: Path, state: Dict[str, Any]) -> Path:
+    """Path passed to child --state: shared acct file when username known."""
+    username = str(state.get("username") or state.get("phone") or "").strip()
+    if not username:
+        return profile_path
+    shared = _sync_shared_account(state)
+    return shared if shared is not None else profile_path
+
+
+def _card_user_service_id(state: Dict[str, Any]) -> str:
+    usid = (
+        state.get("userServiceId")
+        or state.get("selectedUserServiceId")
+        or state.get("user_service_id")
+        or ""
+    )
+    return str(usid) if usid else ""
+
+
+def _read_state(path: Path) -> Dict[str, Any]:
+    if not path.is_file():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _write_state(path: Path, data: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    os.replace(tmp, path)
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+
+
+def _public_profile(profile_id: str, state: Dict[str, Any], path: Path) -> Dict[str, Any]:
+    st = ORCH.get_status(profile_id) if hasattr(ORCH, "get_status") else {"status": "idle"}
+    job_status = st.get("status") or "idle"
+    # Official protocol slot (from spu / last list) ≠ user-selected keepalive protocol.
+    spu = state.get("spuCode") or state.get("lastSpuCode") or ""
+    spu = str(spu) if spu is not None else ""
+    official = state.get("lastOfficialProtocol") or state.get("protocolHint") or ""
+    official = str(official).upper() if official else ""
+    if not official and spu:
+        official = _spu_protocol_hint(spu)
+    return {
+        "id": profile_id,
+        "displayName": state.get("displayName") or profile_id,
+        "usernameMasked": _mask_username(state.get("username")),
+        "desktopLabel": state.get("desktopLabel") or state.get("desktopName") or "",
+        "userServiceId": state.get("userServiceId") or "",
+        "spuCode": spu,
+        "protocolHint": official,
+        "lastOfficialProtocol": official,
+        "hasPassword": bool(state.get("password")),
+        "tokenPresent": bool(state.get("sohoToken") or state.get("token")),
+        "isSubAccount": bool(state.get("isSubAccount")),
+        "loginMode": state.get("loginMode") or ("sub" if state.get("isSubAccount") else "main"),
+        "clientProfile": _normalize_client_profile(state.get("clientProfile"), default="linux"),
+        "draft": bool(state.get("draft")),
+        "jobStatus": job_status,
+        "jobId": st.get("jobId"),
+        "statePath": str(path),
+        "updatedAt": state.get("updatedAt") or (
+            datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).astimezone().isoformat(timespec="seconds")
+            if path.is_file()
+            else _now_iso()
+        ),
+    }
+
+
+def list_profiles(include_draft: bool = False) -> List[Dict[str, Any]]:
+    """List profiles. Login-only draft profiles are hidden until save-and-keepalive.
+
+    HARD_GATE#868: skip shared acct_*.json (token store only, not UI cards).
+    """
+    out: List[Dict[str, Any]] = []
+    for p in sorted(profiles_dir().glob("*.json")):
+        if _is_shared_account_file(p):
+            continue
+        pid = p.stem
+        st = _read_state(p)
+        if not include_draft and bool(st.get("draft")):
+            continue
+        # surface tokenPresent from shared account when card file lacks token
+        st = _hydrate_profile_from_shared(st)
+        out.append(_public_profile(pid, st, p))
+    return out
+
+
+
+def _commit_profile_draft(path: Path, state: Dict[str, Any]) -> Dict[str, Any]:
+    """Clear draft flag so profile appears in timeline (save-and-keepalive)."""
+    if state.get("draft"):
+        state = dict(state)
+        state.pop("draft", None)
+        state["updatedAt"] = _now_iso()
+        _write_state(path, state)
+    return state
+
+
+# ---------------------------------------------------------------------------
+# Handlers
+# ---------------------------------------------------------------------------
+
+async def health(request: Request) -> JSONResponse:
+    return JSONResponse(
+        {
+            "ok": True,
+            "status": "up",
+            "service": "cmcc-cloud-alive-webui",
+            "at": _now_iso(),
+            "orchestrator": type(ORCH).__name__,
+        }
+    )
+
+
+async def system_info(request: Request) -> JSONResponse:
+    expected = _read_access_token()
+    has_file = False
+    try:
+        has_file = _access_token_path().is_file() and bool(
+            _access_token_path().read_text(encoding="utf-8", errors="replace").strip()
+        )
+    except OSError:
+        has_file = False
+    has_env = bool((os.environ.get("CMCC_WEBUI_TOKEN") or "").strip())
+    return JSONResponse(
+        {
+            "ok": True,
+            "service": "cmcc-cloud-alive",
+            "dataDir": str(_data_dir()),
+            "profilesDir": str(profiles_dir()),
+            "cliCallable": True,  # package present; not probing LIVE
+            # Footer: "服务 cmcc-cloud-alive · v{version}" — align with WebUI baseline id.
+            "version": "0.1.0-webui-871d-access-gate19",
+            "tokenRequired": bool(expected),
+            # gate6: empty token = open access; setup is optional (not forced)
+            "setupRequired": False,
+            "authEnabled": bool(expected),
+            "tokenSource": ("file" if has_file else ("env" if has_env else "none")),
+            "orchestrator": type(ORCH).__name__,
+        }
+    )
+
+
+async def profiles_list(request: Request) -> JSONResponse:
+    return JSONResponse({"ok": True, "profiles": list_profiles()})
+
+
+async def profiles_create(request: Request) -> JSONResponse:
+    try:
+        body = await request.json()
+    except Exception:
+        return api_error("VALIDATION", "JSON body required")
+    if not isinstance(body, dict):
+        return api_error("VALIDATION", "JSON object required")
+    display = (body.get("displayName") or body.get("name") or "").strip()
+    username = (body.get("username") or "").strip()
+    password = body.get("password")  # write-only
+    client_profile = _normalize_client_profile(body.get("clientProfile"), default="linux")
+    if str(body.get("clientProfile") or "").strip() and client_profile not in ("linux", "windows", "mac"):
+        return api_error("VALIDATION", "clientProfile must be linux|windows|mac")
+    if client_profile not in ("linux", "windows", "mac"):
+        client_profile = "linux"
+    base = _safe_profile_id(display or username or f"p-{uuid.uuid4().hex[:8]}")
+    pid = base
+    n = 2
+    while _profile_path(pid).exists():
+        pid = f"{base}-{n}"
+        n += 1
+    state: Dict[str, Any] = {
+        "displayName": display or pid,
+        "username": username,
+        "clientProfile": client_profile,
+        "createdAt": _now_iso(),
+        "updatedAt": _now_iso(),
+    }
+    # HARD_GATE#850: login-only create stays draft; hidden from timeline until save.
+    if body.get("draft") is True or str(body.get("draft") or "").lower() in ("1", "true", "yes"):
+        state["draft"] = True
+    if password:
+        state["password"] = str(password)
+        state["passwordSavedAt"] = _now_iso()
+    path = _profile_path(pid)
+    _write_state(path, state)
+    public = _public_profile(pid, state, path)
+    return JSONResponse({"ok": True, "profile": public}, status_code=201)
+
+
+async def profiles_get(request: Request) -> JSONResponse:
+    pid = request.path_params["profile_id"]
+    path = _profile_path(pid)
+    if not path.is_file():
+        return api_error("NOT_FOUND", f"profile {pid} not found", 404)
+    state = _read_state(path)
+    return JSONResponse({"ok": True, "profile": _public_profile(pid, state, path)})
+
+
+async def profiles_delete(request: Request) -> JSONResponse:
+    """Delete a cloud-desktop account profile JSON.
+
+    OPS#185 / OPEN#188: if keepalive is running, stop it first, then unlink
+    the profile file. Idempotent-ish: missing profile → 404 (not 405).
+    """
+    pid = request.path_params["profile_id"]
+    # Block path traversal; do not re-normalize id (Master probe __no_such__ → 404).
+    if not pid or any(x in pid for x in ("/", "\\", "..")):
+        return api_error("VALIDATION", "invalid profile id", 400)
+    path = _profile_path(pid)
+    try:
+        path.resolve().relative_to(profiles_dir().resolve())
+    except Exception:
+        return api_error("VALIDATION", "invalid profile id", 400)
+    if not path.is_file():
+        return api_error("NOT_FOUND", f"profile {pid} not found", 404)
+
+    stopped = False
+    stop_detail = None
+    try:
+        st = ORCH.get_status(pid) if hasattr(ORCH, "get_status") else {}
+        status = (st or {}).get("status") or "idle"
+        if status == "running":
+            try:
+                job = ORCH.stop_job(pid)
+                stopped = True
+                stop_detail = (job or {}).get("status") or "stopped"
+            except KeyError:
+                # No active job mapping; continue to delete file.
+                stop_detail = "no_job"
+            except Exception as e:
+                return api_error("STOP_FAILED", f"stop before delete failed: {e}", 500)
+    except Exception as e:
+        return api_error("STOP_FAILED", f"status before delete failed: {e}", 500)
+
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        return api_error("NOT_FOUND", f"profile {pid} not found", 404)
+    except OSError as e:
+        return api_error("IO_ERROR", f"delete failed: {e}", 500)
+
+    # Best-effort: remove leftover tmp if any
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    try:
+        if tmp.is_file():
+            tmp.unlink()
+    except OSError:
+        pass
+
+    return JSONResponse(
+        {
+            "ok": True,
+            "deleted": True,
+            "profileId": pid,
+            "stoppedJob": stopped,
+            "stopDetail": stop_detail,
+        }
+    )
+
+
+def _password_login_for_profile(
+    path: Path, username: str, password: str, mode: str = "main"
+) -> Dict[str, Any]:
+    """Thin wrapper: main/sub password login writes sohoToken into profile state JSON."""
+    from cmcc_cloud_alive.auth import password_login, sub_password_login
+
+    login_fn = (
+        sub_password_login
+        if str(mode).lower() in ("sub", "subaccount", "1", "true")
+        else password_login
+    )
+    return login_fn(
+        username,
+        password,
+        state_path=str(path),
+        save_password=True,
+    )
+
+
+
+async def profiles_patch(request: Request) -> JSONResponse:
+    """Partial update for card UI meta (clientProfile / displayName / protocol draft).
+
+    Does not touch live session tokens except via explicit body keys already
+    handled by login. Used by FE when user toggles 客户端 segment so the choice
+    survives refresh without requiring a full re-login.
+    """
+    pid = request.path_params["profile_id"]
+    path = _profile_path(pid)
+    if not path.is_file():
+        return api_error("NOT_FOUND", f"profile {pid} not found", 404)
+    try:
+        body = await request.json()
+    except Exception:
+        return api_error("VALIDATION", "JSON body required")
+    if not isinstance(body, dict):
+        return api_error("VALIDATION", "JSON object required")
+    state = _read_state(path)
+    changed = False
+    if "clientProfile" in body:
+        raw = body.get("clientProfile")
+        if raw is None or str(raw).strip() == "":
+            return api_error("VALIDATION", "clientProfile must be linux|windows|mac")
+        new_v = _normalize_client_profile(raw, default="")
+        if new_v not in ("linux", "windows", "mac"):
+            return api_error("VALIDATION", "clientProfile must be linux|windows|mac")
+        if state.get("clientProfile") != new_v:
+            state["clientProfile"] = new_v
+            changed = True
+        else:
+            state["clientProfile"] = new_v  # canonicalize
+            changed = True
+    if "displayName" in body and body.get("displayName") is not None:
+        dn = str(body.get("displayName") or "").strip()
+        if dn and state.get("displayName") != dn:
+            state["displayName"] = dn
+            changed = True
+    if "protocol" in body and body.get("protocol") is not None:
+        # store user choice only; resolve_user_protocol remains source at start
+        proto = str(body.get("protocol") or "").strip().upper()
+        if proto:
+            if proto in ("ZX", "ZHONGXING"):
+                proto = "ZTE"
+            if proto == "SANGFOR":
+                proto = "SCG"
+            if proto in ("ZTE", "SCG") and state.get("protocol") != proto:
+                state["protocol"] = proto
+                changed = True
+    if not changed and "clientProfile" not in body:
+        return api_error("VALIDATION", "no supported fields to patch", 400)
+    state["updatedAt"] = _now_iso()
+    _write_state(path, state)
+    try:
+        _sync_shared_account(state)
+    except Exception:
+        pass
+    # re-read + hydrate for response consistency with GET
+    state2 = _read_state(path)
+    try:
+        state2 = _hydrate_profile_from_shared(state2)
+    except Exception:
+        pass
+    # card-level clientProfile must win over shared hydrate defaults
+    if state.get("clientProfile"):
+        state2["clientProfile"] = state["clientProfile"]
+    pub = _public_profile(pid, state2, path)
+    return JSONResponse({"ok": True, "profile": pub})
+
+
+async def profiles_login(request: Request) -> JSONResponse:
+    """Save credentials and attempt LIVE cloud login (sohoToken).
+
+    Default path calls ``auth.password_login`` → ``core.password_login`` on a
+    worker thread and persists ``sohoToken`` into the profile state file.
+    Offline smoke may set ``CMCC_WEBUI_LOGIN_STUB=1`` to store credentials only
+    (never invents a session token). Callers must treat
+    ``sessionEstablished=false`` as not logged in for desktops.
+    """
+    pid = request.path_params["profile_id"]
+    path = _profile_path(pid)
+    if not path.is_file():
+        return api_error("NOT_FOUND", f"profile {pid} not found", 404)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if not isinstance(body, dict):
+        body = {}
+    state = _read_state(path)
+    username = (body.get("username") or state.get("username") or "").strip()
+    password = body.get("password")
+    if password is not None and str(password) == "":
+        return api_error(
+            "VALIDATION",
+            "password empty",
+            400,
+            next_step="请填写密码后再保存",
+        )
+    if body.get("password"):
+        state["password"] = str(body["password"])
+        state["passwordSavedAt"] = _now_iso()
+        password = str(body["password"])
+    else:
+        password = state.get("password")
+    if body.get("username"):
+        state["username"] = str(body["username"]).strip()
+        username = state["username"]
+    # main/sub account login mode (composer dual buttons)
+    # HARD_GATE#ye4: when FE omits mode (legacy config save/start), KEEP existing
+    # profile isSubAccount — defaulting to main would 4119 sub-account passwords.
+    raw_mode = body.get("mode")
+    if raw_mode is None and "isSubAccount" in body:
+        raw_mode = "sub" if body.get("isSubAccount") else "main"
+    if raw_mode is None:
+        # preserve stored account type; only fall back to main for brand-new profiles
+        if state.get("isSubAccount") is True or str(state.get("loginMode") or "").lower().startswith("sub"):
+            raw_mode = "sub"
+        else:
+            raw_mode = "main"
+    login_mode = (
+        "sub"
+        if str(raw_mode or "main").lower() in ("sub", "subaccount", "1", "true", "sub_password")
+        else "main"
+    )
+    state["loginMode"] = login_mode
+    state["isSubAccount"] = login_mode == "sub"
+    # HARD_GATE#871d-client-token: persist clientProfile from UI (card/composer)
+    if _apply_client_profile_from_body(state, body):
+        state["updatedAt"] = _now_iso()
+    if not username and not (state.get("sohoToken") or state.get("token")):
+        return api_error(
+            "VALIDATION",
+            "username required when no session token",
+            400,
+            next_step="请填写账号，或先写入有效 sohoToken",
+        )
+
+    state["lastLoginAttemptAt"] = _now_iso()
+    state["updatedAt"] = _now_iso()
+
+    stub_on = os.environ.get("CMCC_WEBUI_LOGIN_STUB", "").strip() in (
+        "1",
+        "true",
+        "TRUE",
+        "yes",
+        "YES",
+    )
+    if stub_on:
+        token_present = bool(state.get("sohoToken") or state.get("token"))
+        state["lastLoginStatus"] = (
+            "session-present" if token_present else "credentials-saved-no-session"
+        )
+        _write_state(path, state)
+        try:
+            _sync_shared_account(state)
+        except Exception:
+            pass
+        pub = _public_profile(pid, state, path)
+        return JSONResponse(
+            {
+                "ok": True,
+                "profile": pub,
+                "sessionEstablished": token_present,
+                "source": "stub",
+                "note": (
+                    "session already present; desktops may list_clouds"
+                    if token_present
+                    else "CMCC_WEBUI_LOGIN_STUB=1: credentials stored only; no sohoToken minted"
+                ),
+                "nextStep": (
+                    "拉取桌面列表（GET /desktops）"
+                    if token_present
+                    else "离线 stub：未建立 sohoToken；关 stub 后重试 LIVE 登录"
+                ),
+            }
+        )
+
+    if not username or not password:
+        token_present = bool(state.get("sohoToken") or state.get("token"))
+        if token_present:
+            state["lastLoginStatus"] = "session-present"
+            _write_state(path, state)
+            try:
+                _sync_shared_account(state)
+            except Exception:
+                pass
+            pub = _public_profile(pid, state, path)
+            return JSONResponse(
+                {
+                    "ok": True,
+                    "profile": pub,
+                    "sessionEstablished": True,
+                    "source": "existing-session",
+                    "note": "session already present; no password supplied for re-login",
+                    "nextStep": "拉取桌面列表（GET /desktops）",
+                }
+            )
+        state["lastLoginStatus"] = "credentials-incomplete"
+        _write_state(path, state)
+        return api_error(
+            "VALIDATION",
+            "username and password required for LIVE login",
+            400,
+            next_step="请填写账号和密码后重新登录",
+        )
+
+    # Persist credentials before LIVE call so retries / re-login can reuse them.
+    state["username"] = username
+    state["password"] = str(password)
+    state["passwordSavedAt"] = state.get("passwordSavedAt") or _now_iso()
+    state["lastLoginStatus"] = "live-attempt"
+    _write_state(path, state)
+
+    try:
+        await asyncio.to_thread(_password_login_for_profile, path, username, str(password), login_mode)
+    except Exception as e:
+        msg = str(e) or e.__class__.__name__
+        code_name = "UPSTREAM"
+        status = 502
+        resp = getattr(e, "response", None)
+        # Prefer upstream response codes. Do NOT match bare "login"/"password":
+        # core.assert_ok labels look like "passwordLogin failed: code=... msg=..."
+        # and would falsely map every upstream failure to AUTH_FAILED/401.
+        auth_codes = {4001, 4003, 4010, 4011, 4100, 401, 403}
+        rc_int = None
+        upstream_msg = ""
+        if isinstance(resp, dict):
+            rc = resp.get("code")
+            try:
+                rc_int = int(rc) if rc is not None else None
+            except (TypeError, ValueError):
+                rc_int = None
+            upstream_msg = str(resp.get("msg") or "")
+        if rc_int in auth_codes:
+            code_name = "AUTH_FAILED"
+            status = 401
+        else:
+            # Message-based auth only for explicit credential-wrong phrases.
+            # Never match bare "login" or the assert_ok label "passwordLogin".
+            hay = f"{upstream_msg} {msg}".lower()
+            auth_needles = (
+                "wrong password",
+                "invalid password",
+                "password error",
+                "password incorrect",
+                "bad credentials",
+                "invalid credentials",
+                "credential",
+                "authentication failed",
+                "auth failed",
+                "unauthorized",
+                "账号或密码",
+                "用户名或密码",
+                "密码错误",
+                "密码不正确",
+            )
+            if any(n in hay for n in auth_needles):
+                code_name = "AUTH_FAILED"
+                status = 401
+        # Re-read; core may have partially written. Never invent sohoToken.
+        state = _read_state(path)
+        state["lastLoginAttemptAt"] = _now_iso()
+        state["lastLoginStatus"] = f"failed:{code_name}"
+        state["lastLoginError"] = msg[:500]
+        state["updatedAt"] = _now_iso()
+        _write_state(path, state)
+        zh_next = (
+            "账号或密码错误：请核对后重试 POST /login"
+            if code_name == "AUTH_FAILED"
+            else "上游登录失败：检查网络/账号后重试 POST /login"
+        )
+        return api_error(
+            code_name,
+            f"password_login failed: {msg}",
+            status,
+            next_step=zh_next,
+        )
+
+    state = _read_state(path)
+    token_present = bool(state.get("sohoToken") or state.get("token"))
+    state["lastLoginAttemptAt"] = _now_iso()
+    state["lastLoginStatus"] = "session-established" if token_present else "live-ok-no-token"
+    state["lastLoginError"] = ""
+    state["updatedAt"] = _now_iso()
+    _write_state(path, state)
+    # HARD_GATE#868: same account shares one token store (acct_<user>.json)
+    try:
+        _sync_shared_account(state)
+    except Exception:
+        pass
+    pub = _public_profile(pid, state, path)
+    return JSONResponse(
+        {
+            "ok": True,
+            "profile": pub,
+            "sessionEstablished": token_present,
+            "source": "password_login",
+            "note": (
+                "LIVE login ok; sohoToken written — GET /desktops may list_clouds"
+                if token_present
+                else "LIVE login returned without sohoToken; desktops still gated"
+            ),
+            "nextStep": (
+                "拉取桌面列表（GET /desktops）"
+                if token_present
+                else "登录响应无 sohoToken：检查上游账号状态后重试"
+            ),
+        }
+    )
+
+
+def _spu_protocol_hint(spu_code: str) -> str:
+    """Map spuCode → likely client protocol (UI hint only; user may override)."""
+    s = (spu_code or "").strip().lower()
+    if not s:
+        return ""
+    if s == "sc-cloud-pc" or s.startswith("sc-"):
+        return "SCG"
+    if s == "zte-cloud-pc" or s.startswith("zte-"):
+        return "ZTE"
+    return ""
+
+
+def _desktop_from_cloud(item: Any) -> Optional[Dict[str, Any]]:
+    """Normalize one /cc/cloudPc/list item → WebUI desktop DTO (J8 spuCode)."""
+    if not isinstance(item, dict):
+        return None
+    usid = item.get("userServiceId") or item.get("user_service_id") or ""
+    usid = str(usid).strip() if usid is not None else ""
+    if not usid:
+        return None
+    spu_raw = item.get("spuCode") if item.get("spuCode") is not None else item.get("spu_code")
+    spu = str(spu_raw or "")
+    vm_name = item.get("vmName") or item.get("desktopName") or item.get("name") or ""
+    sku = item.get("skuName") or ""
+    vm_status_show = item.get("vmStatusShow") or item.get("statusShow") or ""
+    # HARD_GATE#850: name = skuName (python CLI: 家庭云电脑高级版), fallback vmName
+    sku_s = str(sku) if sku is not None else ""
+    vm_s = str(vm_name) if vm_name is not None else ""
+    desk_label = sku_s or vm_s or usid
+    dto: Dict[str, Any] = {
+        "userServiceId": usid,
+        "vmName": vm_s,
+        "spuCode": spu,
+        "skuName": sku_s,
+        "desktopLabel": desk_label,
+        "name": desk_label,
+        "label": desk_label,
+        "vmStatus": item.get("vmStatus"),
+        "vmStatusShow": str(vm_status_show) if vm_status_show is not None else "",
+        "statusName": str(vm_status_show) if vm_status_show is not None else "",
+    }
+    hint = _spu_protocol_hint(spu)
+    if hint:
+        dto["protocolHint"] = hint
+    return dto
+
+
+def _normalize_desktops(cloud_list: Any) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    if not isinstance(cloud_list, list):
+        return out
+    for raw in cloud_list:
+        dto = _desktop_from_cloud(raw)
+        if dto is not None:
+            out.append(dto)
+    return out
+
+
+def _desktops_shape_fixture() -> List[Dict[str, Any]]:
+    """Offline shape-only rows (env CMCC_WEBUI_DESKTOPS_FIXTURE=1). Not LIVE."""
+    return [
+        {
+            "userServiceId": "fixture-sc-001",
+            "vmName": "fixture-sc",
+            "spuCode": "sc-cloud-pc",
+            "skuName": "fixture",
+            "desktopLabel": "fixture",
+            "name": "fixture",
+            "vmStatus": 1,
+            "vmStatusShow": "运行中",
+            "statusName": "运行中",
+            "protocolHint": "SCG",
+        },
+        {
+            "userServiceId": "fixture-zte-001",
+            "vmName": "fixture-zte",
+            "spuCode": "zte-cloud-pc",
+            "skuName": "fixture",
+            "vmStatus": 1,
+            "vmStatusShow": "运行中",
+            "protocolHint": "ZTE",
+        },
+    ]
+
+
+def _list_clouds_for_profile(path: Path) -> List[Any]:
+    """Thin wrapper: core.list_clouds with profile JSON as state file (single short call)."""
+    from types import SimpleNamespace
+
+    from cmcc_cloud_alive.core import list_clouds
+
+    return list_clouds(SimpleNamespace(state=str(path)))
+
+
+async def profiles_desktops(request: Request) -> JSONResponse:
+    """List cloud desktops for a profile (J8_BE_DESKTOPS_SPU).
+
+    Prefer cached ``cloudList`` in the profile state JSON. Otherwise call
+    ``core.list_clouds`` (``/cc/cloudPc/list/v6``) once when ``sohoToken`` is
+    present. Unauthenticated profiles get a structured error — never a silent
+    stub empty success. Optional ``?refresh=1`` forces re-list. Fixture shape
+    rows only when env ``CMCC_WEBUI_DESKTOPS_FIXTURE=1`` (offline smoke).
+    """
+    pid = request.path_params["profile_id"]
+    path = _profile_path(pid)
+    if not path.is_file():
+        return api_error("NOT_FOUND", f"profile {pid} not found", 404)
+
+    refresh = (request.query_params.get("refresh") or "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    state = _read_state(path)
+    token = (state.get("sohoToken") or state.get("token") or "").strip()
+    cached = state.get("cloudList")
+    has_cache = isinstance(cached, list) and bool(state.get("lastCloudListAt") or cached)
+
+    source = "cache"
+    raw_items: List[Any] = []
+
+    if has_cache and not refresh:
+        raw_items = list(cached or [])
+        source = "cache"
+    elif token:
+        try:
+            raw_items = await asyncio.to_thread(_list_clouds_for_profile, path)
+            source = "list_clouds"
+            # re-read after merge_state wrote cloudList into the same profile file
+            state = _read_state(path)
+        except Exception as e:
+            # Prefer CmccError details without requiring core at import time
+            msg = str(e) or e.__class__.__name__
+            code_name = "UPSTREAM"
+            status = 502
+            resp = getattr(e, "response", None)
+            if isinstance(resp, dict):
+                rc = resp.get("code")
+                # common auth-ish codes from CMCC gateways
+                if rc in (4001, 4003, 4010, 4011, 4100, 401, 403) or "token" in msg.lower():
+                    code_name = "AUTH_EXPIRED"
+                    status = 401
+            zh_next = (
+                "会话可能已失效：请重新登录写入 sohoToken，再 GET /desktops?refresh=1"
+                if code_name == "AUTH_EXPIRED"
+                else "上游列桌面失败：检查网络/账号后重试 GET /desktops?refresh=1"
+            )
+            return api_error(
+                code_name,
+                f"list_clouds failed: {msg}",
+                status,
+                next_step=zh_next,
+            )
+    else:
+        fixture_on = os.environ.get("CMCC_WEBUI_DESKTOPS_FIXTURE", "").strip() in (
+            "1",
+            "true",
+            "TRUE",
+            "yes",
+            "YES",
+        )
+        if fixture_on:
+            desktops = _desktops_shape_fixture()
+            return JSONResponse(
+                {
+                    "ok": True,
+                    "profileId": pid,
+                    "desktops": desktops,
+                    "source": "fixture",
+                    "count": len(desktops),
+                    "note": "shape fixture only (CMCC_WEBUI_DESKTOPS_FIXTURE); wire path is core.list_clouds",
+                }
+            )
+        return api_error(
+            "AUTH_REQUIRED",
+            "未登录：当前账号没有有效会话（sohoToken），无法拉取桌面列表",
+            401,
+            next_step="请先登录建立会话（写入 sohoToken），再重试拉取桌面",
+        )
+
+    desktops = _normalize_desktops(raw_items)
+    return JSONResponse(
+        {
+            "ok": True,
+            "profileId": pid,
+            "desktops": desktops,
+            "source": source,
+            "count": len(desktops),
+            "lastCloudListAt": state.get("lastCloudListAt") or "",
+        }
+    )
+
+
+async def profiles_select_desktop(request: Request) -> JSONResponse:
+    """Bind selected desktop + official protocol slot (spu / protocolHint).
+
+    ``lastOfficialProtocol`` is the **official** protocol derived from spuCode
+    (SCG/ZTE hint). It is independent of the user-chosen keepalive protocol on
+    start-job.
+    """
+    pid = request.path_params["profile_id"]
+    path = _profile_path(pid)
+    if not path.is_file():
+        return api_error("NOT_FOUND", f"profile {pid} not found", 404)
+    try:
+        body = await request.json()
+    except Exception:
+        return api_error("VALIDATION", "JSON body required")
+    if not isinstance(body, dict):
+        body = {}
+    usid = body.get("userServiceId") or ""
+    label = body.get("desktopLabel") or body.get("desktopName") or body.get("vmName") or ""
+    spu = body.get("spuCode") or body.get("spu") or ""
+    # Allow explicit official protocol, else derive from spu / protocolHint body.
+    official_in = body.get("lastOfficialProtocol") or body.get("protocolHint") or ""
+    state = _read_state(path)
+    if usid:
+        state["userServiceId"] = str(usid)
+    if label:
+        state["desktopLabel"] = str(label)
+    if spu:
+        spu_s = str(spu).strip()
+        state["spuCode"] = spu_s
+        state["lastSpuCode"] = spu_s
+    official = str(official_in).strip().upper() if official_in else ""
+    if not official and state.get("spuCode"):
+        official = _spu_protocol_hint(str(state.get("spuCode") or ""))
+    if official:
+        state["lastOfficialProtocol"] = official
+        state["protocolHint"] = official
+    # HARD_GATE#851: keep draft; only save-and-start commits to timeline
+    state["updatedAt"] = _now_iso()
+    _write_state(path, state)
+    return JSONResponse({"ok": True, "profile": _public_profile(pid, state, path)})
+
+
+
+def resolve_user_protocol(body_protocol=None, state=None, fallback="ZTE"):
+    """HARD_GATE#871c: body → profile fields → historical empty fallback. Never force SCG."""
+    candidates = []
+    if body_protocol:
+        candidates.append(body_protocol)
+    st = state or {}
+    for k in ("protocol", "lastOfficialProtocol", "protocolHint", "last_protocol"):
+        if st.get(k):
+            candidates.append(st.get(k))
+    for v in candidates:
+        u = str(v or "").strip().upper()
+        if u in ("ZX", "ZHONGXING"):
+            u = "ZTE"
+        if u == "SANGFOR":
+            u = "SCG"
+        if u in ("ZTE", "SCG"):
+            return u
+    return str(fallback or "ZTE").upper()
+
+
+async def profiles_start_job(request: Request) -> JSONResponse:
+    pid = request.path_params["profile_id"]
+    path = _profile_path(pid)
+    if not path.is_file():
+        return api_error("NOT_FOUND", f"profile {pid} not found", 404)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if not isinstance(body, dict):
+        body = {}
+    mode = body.get("mode") or "live"
+    try:
+        timing = parse_job_timing_fields(body)
+    except ValueError as e:
+        return api_error("VALIDATION", str(e))
+    # HARD_GATE#850: save-and-keepalive commits draft into timeline
+    state = _read_state(path)
+    # HARD_GATE#871c: user protocol choice — body → profile → ZTE empty-only
+    protocol = resolve_user_protocol(body.get("protocol"), state)
+    # HARD_GATE#871d-client-token: persist clientProfile before spawn (card + shared)
+    changed = False
+    if _apply_client_profile_from_body(state, body):
+        changed = True
+    if state.get("draft"):
+        state.pop("draft", None)
+        changed = True
+    if not state.get("clientProfile"):
+        state["clientProfile"] = _normalize_client_profile(
+            body.get("clientProfile") if isinstance(body, dict) else None,
+            default="linux",
+        )
+        changed = True
+    if changed:
+        state["updatedAt"] = _now_iso()
+        _write_state(path, state)
+        try:
+            _sync_shared_account(state)
+        except Exception:
+            pass
+    # HARD_GATE#868: card keeps UI meta; live child uses shared acct_*.json token
+    # and --user-service-id from THIS card (not from shared, avoids dual-card race).
+    usid = (
+        state.get("userServiceId")
+        or state.get("selectedUserServiceId")
+        or state.get("user_service_id")
+        or ""
+    )
+    live_path = _resolve_live_state_path(path, state)
+    # ensure shared has latest credentials/token before spawn
+    try:
+        _sync_shared_account(state)
+        live_path = _resolve_live_state_path(path, state)
+    except Exception:
+        pass
+    try:
+        job = await asyncio.to_thread(ORCH.start_job,
+            pid,
+            live_path,
+            protocol=protocol,
+            mode=mode,
+            extra_args=timing["extraArgs"],
+            interval_sec=timing["intervalSec"],
+            traffic_sec=timing["trafficSec"],
+            duration_sec=timing["durationSec"],
+            user_service_id=str(usid) if usid else None,
+        )
+    except TypeError:
+        # older orchestrator signature: pass extra_args only, merge fields on response
+        try:
+            job = await asyncio.to_thread(ORCH.start_job,
+                pid, live_path, protocol=protocol, mode=mode, extra_args=timing["extraArgs"],
+                user_service_id=str(usid) if usid else None,
+            )
+            job = dict(job)
+            job["intervalSec"] = timing["intervalSec"]
+            job["trafficSec"] = timing["trafficSec"]
+            job["durationSec"] = timing["durationSec"]
+            job["extraArgs"] = list(timing["extraArgs"])
+        except RuntimeError as e:
+            if str(e) == "PROFILE_IN_USE":
+                return api_error("PROFILE_IN_USE", "profile already has a running job", 409)
+            if str(e) == "USID_IN_USE":
+                return api_error(
+                    "USID_IN_USE",
+                    "desktop userServiceId already has a running job on another card",
+                    409,
+                )
+            return api_error("VALIDATION", str(e))
+        except ValueError as e:
+            return api_error("VALIDATION", str(e))
+        return JSONResponse({"ok": True, "job": job}, status_code=202)
+    except RuntimeError as e:
+        if str(e) == "PROFILE_IN_USE":
+            return api_error("PROFILE_IN_USE", "profile already has a running job", 409)
+        if str(e) == "USID_IN_USE":
+            return api_error(
+                "USID_IN_USE",
+                "desktop userServiceId already has a running job on another card",
+                409,
+            )
+        return api_error("VALIDATION", str(e))
+    except ValueError as e:
+        return api_error("VALIDATION", str(e))
+    return JSONResponse({"ok": True, "job": job}, status_code=202)
+
+
+async def profiles_stop_job(request: Request) -> JSONResponse:
+    pid = request.path_params["profile_id"]
+    path = _profile_path(pid)
+    if not path.is_file():
+        return api_error("NOT_FOUND", f"profile {pid} not found", 404)
+    try:
+        job = ORCH.stop_job(pid)
+    except KeyError:
+        return api_error("NOT_FOUND", "no job for profile", 404)
+    return JSONResponse({"ok": True, "job": job})
+
+
+def _desktop_logout_for_profile(live_path: Path, user_service_id: str) -> Dict[str, Any]:
+    """Call CLI desktop_logout → /cc/cloudPc/logout/v2 on worker thread."""
+    from cmcc_cloud_alive import logout as logout_mod
+
+    return logout_mod.desktop_logout(
+        user_service_id=user_service_id or None,
+        state_path=str(live_path),
+    )
+
+
+async def profiles_desktop_logout(request: Request) -> JSONResponse:
+    """Desktop session logout via /cc/cloudPc/logout/v2 (same as CLI logout --desktop).
+
+    Uses this card's userServiceId and shared acct_*.json token path so multi-card
+    same-account keeps one live session file (HARD_GATE#868).
+    """
+    pid = request.path_params["profile_id"]
+    path = _profile_path(pid)
+    if not path.is_file():
+        return api_error("NOT_FOUND", f"profile {pid} not found", 404)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if not isinstance(body, dict):
+        body = {}
+
+    state = _hydrate_profile_from_shared(_read_state(path))
+    usid = (
+        body.get("userServiceId")
+        or body.get("user_service_id")
+        or state.get("userServiceId")
+        or state.get("selectedUserServiceId")
+        or state.get("user_service_id")
+        or ""
+    )
+    usid = str(usid).strip() if usid is not None else ""
+    if not usid:
+        return api_error(
+            "VALIDATION",
+            "userServiceId required for desktop logout",
+            400,
+            next_step="请先选择云桌面，或在配置中填写 userServiceId",
+        )
+    token = state.get("sohoToken") or state.get("token") or ""
+    if not token:
+        return api_error(
+            "AUTH_REQUIRED",
+            "未登录：当前账号没有有效会话（sohoToken），无法桌面登出",
+            401,
+            next_step="请先登录建立会话，再执行桌面登出",
+        )
+
+    # Read-only live path: do NOT _sync_shared_account here.
+    # Sync would write this card's userServiceId into the shared acct_*.json and
+    # clobber a sibling card of the same account (multi-card same-username).
+    live_path = _resolve_live_state_path(path, state)
+
+    try:
+        response = await asyncio.to_thread(_desktop_logout_for_profile, live_path, usid)
+    except Exception as e:
+        msg = str(e) or e.__class__.__name__
+        code_name = "UPSTREAM_ERROR"
+        status = 502
+        resp = getattr(e, "response", None)
+        rc = None
+        if isinstance(resp, dict):
+            rc = resp.get("code")
+        # Token / session expired codes from CMCC SOHO (incl. 4015)
+        auth_codes = (4001, 4003, 4010, 4011, 4015, 4100, 401, 403)
+        low = msg.lower()
+        if (
+            (rc in auth_codes)
+            or "token" in low
+            or "4015" in msg
+            or "未登录" in msg
+            or "登录" in msg and ("失效" in msg or "过期" in msg)
+        ):
+            code_name = "AUTH_EXPIRED"
+            status = 401
+        elif "not found" in low or "userServiceId not found" in msg:
+            code_name = "NOT_FOUND"
+            status = 404
+        return api_error(
+            code_name,
+            f"desktop_logout failed: {msg}",
+            status,
+            next_step=(
+                "会话可能已失效：请重新登录后再试桌面登出"
+                if code_name == "AUTH_EXPIRED"
+                else (
+                    "云桌面 usid 无效或不属于当前账号：请重新「获取云桌面」后再登出"
+                    if code_name == "NOT_FOUND"
+                    else "上游桌面登出失败：检查网络/账号后重试"
+                )
+            ),
+        )
+
+    # api_request returns body even when SOHO code != 2000; map those to API errors
+    # so the UI does not toast "成功" for 4015/stale usid (was the 502 / fake-ok path).
+    if isinstance(response, dict):
+        up_code = response.get("code")
+        up_msg = (
+            response.get("errMsg")
+            or response.get("msg")
+            or response.get("message")
+            or ""
+        )
+        up_msg = str(up_msg)
+        try:
+            up_code_i = int(up_code) if up_code is not None else None
+        except (TypeError, ValueError):
+            up_code_i = None
+        ok_upstream = (up_code_i == 2000) or (str(up_msg).upper() == "SUCCESS")
+        if not ok_upstream:
+            auth_codes = (4001, 4003, 4010, 4011, 4015, 4100, 401, 403)
+            low = up_msg.lower()
+            if (
+                (up_code_i in auth_codes)
+                or "token" in low
+                or "4015" in str(up_code)
+                or "未登录" in up_msg
+                or ("登录" in up_msg and ("失效" in up_msg or "过期" in up_msg))
+            ):
+                return api_error(
+                    "AUTH_EXPIRED",
+                    f"desktop_logout failed: {up_msg or up_code}",
+                    401,
+                    next_step="会话可能已失效：请重新登录后再试桌面登出",
+                )
+            if (
+                "not found" in low
+                or "userServiceId not found" in up_msg
+                or up_code_i in (404, 4004, 5000)
+            ):
+                return api_error(
+                    "NOT_FOUND" if up_code_i != 5000 else "UPSTREAM_ERROR",
+                    f"desktop_logout failed: {up_msg or up_code}",
+                    404 if up_code_i != 5000 else 502,
+                    next_step=(
+                        "云桌面 usid 无效或不属于当前账号：请重新「获取云桌面」后再登出"
+                        if up_code_i != 5000
+                        else "上游桌面登出失败：检查 usid/网络后重试"
+                    ),
+                )
+            return api_error(
+                "UPSTREAM_ERROR",
+                f"desktop_logout failed: {up_msg or up_code}",
+                502,
+                next_step="上游桌面登出失败：检查网络/账号后重试",
+            )
+
+    # Mirror lastDesktopLogout* onto card profile for UI visibility (shared already updated).
+    try:
+        card = _read_state(path)
+        card["lastDesktopLogoutAt"] = _now_iso()
+        card["lastDesktopLogoutUserServiceId"] = usid
+        card["updatedAt"] = _now_iso()
+        _write_state(path, card)
+    except Exception:
+        pass
+
+    return JSONResponse(
+        {
+            "ok": True,
+            "profileId": pid,
+            "userServiceId": usid,
+            "statePath": str(live_path),
+            "response": response,
+        }
+    )
+
+
+async def profiles_logs(request: Request) -> JSONResponse:
+    pid = request.path_params["profile_id"]
+    path = _profile_path(pid)
+    if not path.is_file():
+        return api_error("NOT_FOUND", f"profile {pid} not found", 404)
+    lines = ORCH.recent_logs(profile_id=pid, limit=200)
+    # ensure redaction of any accidental secrets in lines
+    safe = [{"at": x.get("at"), "line": str(x.get("line", ""))[:2000]} for x in lines]
+    return JSONResponse({"ok": True, "profileId": pid, "lines": safe})
+
+
+async def profiles_logs_clear(request: Request) -> JSONResponse:
+    """HARD_GATE#853: clear backend log buffer for a profile/card."""
+    pid = request.path_params["profile_id"]
+    path = _profile_path(pid)
+    if not path.is_file():
+        return api_error("NOT_FOUND", f"profile {pid} not found", 404)
+    result = ORCH.clear_logs(profile_id=pid)
+    return JSONResponse(
+        {
+            "ok": True,
+            "profileId": pid,
+            "cleared": int((result or {}).get("cleared") or 0),
+            "jobId": (result or {}).get("jobId"),
+            "lines": [],
+        }
+    )
+
+
+async def profiles_events(request: Request) -> StreamingResponse:
+    """SSE stream for a profile (and global job_status/job_log)."""
+    pid = request.path_params["profile_id"]
+    path = _profile_path(pid)
+    if not path.is_file():
+        return api_error("NOT_FOUND", f"profile {pid} not found", 404)
+
+    queue = ORCH.subscribe()
+
+    async def gen() -> AsyncIterator[bytes]:
+        try:
+            # initial snapshot
+            st = ORCH.get_status(pid)
+            data = json.dumps(
+                {
+                    "jobId": st.get("jobId"),
+                    "profileId": pid,
+                    "status": st.get("status"),
+                    "at": _now_iso(),
+                    "detail": "snapshot",
+                },
+                ensure_ascii=False,
+            )
+            yield f"event: job_status\ndata: {data}\n\n".encode("utf-8")
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    item = await asyncio.wait_for(queue.get(), timeout=15.0)
+                except asyncio.TimeoutError:
+                    yield b": keepalive\n\n"
+                    continue
+                ev = item.get("event") or "message"
+                payload = item.get("data") or {}
+                if payload.get("profileId") and payload.get("profileId") != pid:
+                    continue
+                line = json.dumps(redact_obj(payload), ensure_ascii=False)
+                yield f"event: {ev}\ndata: {line}\n\n".encode("utf-8")
+        finally:
+            ORCH.unsubscribe(queue)
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+async def events_global(request: Request) -> StreamingResponse:
+    """Global SSE stream — all job_status/job_log events (FE EventSource /api/events)."""
+    queue = ORCH.subscribe()
+
+    async def gen() -> AsyncIterator[bytes]:
+        try:
+            # initial hello so FE knows the stream is alive
+            hello = json.dumps(
+                {"status": "connected", "at": _now_iso(), "detail": "global-sse"},
+                ensure_ascii=False,
+            )
+            yield f"event: job_status\ndata: {hello}\n\n".encode("utf-8")
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    item = await asyncio.wait_for(queue.get(), timeout=15.0)
+                except asyncio.TimeoutError:
+                    yield b": keepalive\n\n"
+                    continue
+                ev = item.get("event") or "message"
+                payload = item.get("data") or {}
+                line = json.dumps(redact_obj(payload), ensure_ascii=False)
+                yield f"event: {ev}\ndata: {line}\n\n".encode("utf-8")
+        finally:
+            ORCH.unsubscribe(queue)
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+async def jobs_list(request: Request) -> JSONResponse:
+    return JSONResponse({"ok": True, "jobs": ORCH.list_jobs()})
+
+
+async def jobs_create(request: Request) -> JSONResponse:
+    try:
+        body = await request.json()
+    except Exception:
+        return api_error("VALIDATION", "JSON body required")
+    pid = (body or {}).get("profileId") or (body or {}).get("profile_id")
+    if not pid:
+        return api_error("VALIDATION", "profileId required")
+    path = _profile_path(str(pid))
+    if not path.is_file():
+        return api_error("NOT_FOUND", f"profile {pid} not found", 404)
+    state = _read_state(path)
+    protocol = resolve_user_protocol((body or {}).get("protocol"), state)
+    mode = body.get("mode") or "live"
+    try:
+        timing = parse_job_timing_fields(body if isinstance(body, dict) else {})
+    except ValueError as e:
+        return api_error("VALIDATION", str(e))
+    try:
+        job = await asyncio.to_thread(ORCH.start_job,
+            str(pid),
+            path,
+            protocol=protocol,
+            mode=mode,
+            extra_args=timing["extraArgs"],
+            interval_sec=timing["intervalSec"],
+            traffic_sec=timing["trafficSec"],
+            duration_sec=timing["durationSec"],
+        )
+    except TypeError:
+        try:
+            job = await asyncio.to_thread(ORCH.start_job,
+                str(pid),
+                path,
+                protocol=protocol,
+                mode=mode,
+                extra_args=timing["extraArgs"],
+            )
+            job = dict(job)
+            job["intervalSec"] = timing["intervalSec"]
+            job["trafficSec"] = timing["trafficSec"]
+            job["durationSec"] = timing["durationSec"]
+            job["extraArgs"] = list(timing["extraArgs"])
+        except RuntimeError as e:
+            if str(e) == "PROFILE_IN_USE":
+                return api_error("PROFILE_IN_USE", "profile already has a running job", 409)
+            if str(e) == "USID_IN_USE":
+                return api_error(
+                    "USID_IN_USE",
+                    "desktop userServiceId already has a running job on another card",
+                    409,
+                )
+            return api_error("VALIDATION", str(e))
+        except ValueError as e:
+            return api_error("VALIDATION", str(e))
+        return JSONResponse({"ok": True, "job": job}, status_code=202)
+    except RuntimeError as e:
+        if str(e) == "PROFILE_IN_USE":
+            return api_error("PROFILE_IN_USE", "profile already has a running job", 409)
+        if str(e) == "USID_IN_USE":
+            return api_error(
+                "USID_IN_USE",
+                "desktop userServiceId already has a running job on another card",
+                409,
+            )
+        return api_error("VALIDATION", str(e))
+    except ValueError as e:
+        return api_error("VALIDATION", str(e))
+    return JSONResponse({"ok": True, "job": job}, status_code=202)
+
+
+async def jobs_get(request: Request) -> JSONResponse:
+    jid = request.path_params["job_id"]
+    job = ORCH.get_job(jid)
+    if not job:
+        return api_error("NOT_FOUND", f"job {jid} not found", 404)
+    return JSONResponse({"ok": True, "job": job})
+
+
+async def jobs_stop(request: Request) -> JSONResponse:
+    jid = request.path_params["job_id"]
+    job = ORCH.get_job(jid)
+    if not job:
+        return api_error("NOT_FOUND", f"job {jid} not found", 404)
+    try:
+        stopped = ORCH.stop_job(job["profileId"])
+    except KeyError:
+        return api_error("NOT_FOUND", "job already gone", 404)
+    return JSONResponse({"ok": True, "job": stopped})
+
+
+async def jobs_events(request: Request) -> StreamingResponse:
+    jid = request.path_params["job_id"]
+    job = ORCH.get_job(jid)
+    if not job:
+        return api_error("NOT_FOUND", f"job {jid} not found", 404)
+    queue = ORCH.subscribe()
+
+    async def gen() -> AsyncIterator[bytes]:
+        try:
+            data = json.dumps(
+                {
+                    "jobId": jid,
+                    "profileId": job.get("profileId"),
+                    "status": job.get("status"),
+                    "at": _now_iso(),
+                },
+                ensure_ascii=False,
+            )
+            yield f"event: job_status\ndata: {data}\n\n".encode("utf-8")
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    item = await asyncio.wait_for(queue.get(), timeout=15.0)
+                except asyncio.TimeoutError:
+                    yield b": keepalive\n\n"
+                    continue
+                payload = item.get("data") or {}
+                if payload.get("jobId") and payload.get("jobId") != jid:
+                    continue
+                ev = item.get("event") or "message"
+                line = json.dumps(redact_obj(payload), ensure_ascii=False)
+                yield f"event: {ev}\ndata: {line}\n\n".encode("utf-8")
+        finally:
+            ORCH.unsubscribe(queue)
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+    )
+
+
+async def logs_global(request: Request) -> JSONResponse:
+    """Legacy job/card log query only when scoped.
+
+    HARD_GATE#768-B: unscoped must NOT flatten job buffers into page log.
+    Page-level run log lives at /api/global-logs.
+    """
+    pid = request.query_params.get("profileId")
+    jid = request.query_params.get("jobId")
+    if not pid and not jid:
+        return JSONResponse({"ok": True, "lines": []})
+    lines = ORCH.recent_logs(job_id=jid, profile_id=pid, limit=200)
+    safe = [{"at": x.get("at"), "line": str(x.get("line", ""))[:2000]} for x in lines]
+    return JSONResponse({"ok": True, "lines": safe})
+
+
+async def logs_batch(request: Request) -> JSONResponse:
+    """HARD_GATE#R2: batch card logs for many profiles (single poll round-trip).
+
+    Query: profileIds=id1,id2 (comma/semicolon) & limit=200 (cap 500, max 50 ids).
+    Unscoped / empty ids → {ok, logs:{}} — never flattens job buffers (HARD_GATE#768-B).
+    """
+    raw = (
+        request.query_params.get("profileIds")
+        or request.query_params.get("ids")
+        or ""
+    )
+    ids = [x.strip() for x in str(raw).replace(";", ",").split(",") if x.strip()]
+    ids = ids[:50]
+    try:
+        limit = int(request.query_params.get("limit") or 200)
+    except Exception:
+        limit = 200
+    limit = max(1, min(limit, 500))
+    if not ids:
+        return JSONResponse({"ok": True, "logs": {}})
+    fn = getattr(ORCH, "recent_logs_batch", None)
+    if callable(fn):
+        raw_map = fn(ids, limit=limit)
+    else:
+        raw_map = {pid: ORCH.recent_logs(profile_id=pid, limit=limit) for pid in ids}
+    safe: Dict[str, List[Dict[str, str]]] = {}
+    for pid, lines in (raw_map or {}).items():
+        safe[str(pid)] = [
+            {"at": x.get("at"), "line": str(x.get("line", ""))[:2000]}
+            for x in (lines or [])
+        ]
+    return JSONResponse({"ok": True, "logs": safe})
+
+
+async def global_logs_get(request: Request) -> JSONResponse:
+    """HARD_GATE#global-run-log: page-level run log (backend-owned ring)."""
+    try:
+        limit = int(request.query_params.get("limit") or 300)
+    except Exception:
+        limit = 300
+    fn = getattr(ORCH, "recent_global_logs", None)
+    if not callable(fn):
+        return JSONResponse({"ok": True, "lines": []})
+    lines = fn(limit=limit)
+    safe = [
+        {
+            "at": x.get("at"),
+            "line": str(x.get("line", ""))[:2000],
+            "level": str(x.get("level") or "info")[:32],
+        }
+        for x in lines
+    ]
+    return JSONResponse({"ok": True, "lines": safe})
+
+
+async def global_logs_post(request: Request) -> JSONResponse:
+    """Append one page-level run-log line from FE (or peers)."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if not isinstance(body, dict):
+        body = {}
+    line = str(body.get("line") or body.get("message") or "").strip()
+    if not line:
+        return api_error("BAD_REQUEST", "line required", 400)
+    level = str(body.get("level") or "info")[:32]
+    fn = getattr(ORCH, "append_global_log", None)
+    if not callable(fn):
+        return api_error("NOT_SUPPORTED", "global log not available", 501)
+    entry = fn(line=line[:2000], level=level, emit=True)
+    return JSONResponse({"ok": True, "entry": entry})
+
+
+async def global_logs_clear(request: Request) -> JSONResponse:
+    """Clear backend page-level run log (memory + disk if orchestrator persists)."""
+    fn = getattr(ORCH, "clear_global_logs", None)
+    if not callable(fn):
+        return JSONResponse({"ok": True, "cleared": 0})
+    result = fn() or {}
+    return JSONResponse(
+        {
+            "ok": True,
+            "cleared": int(result.get("cleared") or 0),
+            "lines": [],
+        }
+    )
+
+
+async def index(request: Request) -> Response:
+    index_path = _STATIC_DIR / "index.html"
+    if index_path.is_file():
+        # HARD_GATE#844: bust stale CSS/JS after layout hotfixes
+        return FileResponse(
+            index_path,
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+            },
+        )
+    return JSONResponse({"ok": True, "message": "static shell missing", "api": "/api/system/health"})
