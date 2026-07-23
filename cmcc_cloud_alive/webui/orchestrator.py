@@ -67,6 +67,43 @@ def _jobs_dir() -> Path:
     return d
 
 
+def _spawn_cwd() -> str:
+    """Working directory for LIVE child processes (HARD_GATE#870 family).
+
+    Must NOT be ``/app`` (or any tree that shadows site-packages via cwd-first
+    import). Prefer the durable home that owns ``.cmcc-cloud-alive`` so custom
+    ``HOME`` / ``CMCC_ALIVE_HOME`` / ``CMCC_DATA_DIR`` deployments work even
+    when the legacy hard-coded ``/data`` path is missing.
+    """
+    data = _data_dir().resolve()
+    if data.name == ".cmcc-cloud-alive":
+        cand = data.parent
+    else:
+        raw = (
+            os.environ.get("CMCC_ALIVE_HOME")
+            or os.environ.get("HOME")
+            or str(Path.home())
+        )
+        cand = Path(raw)
+        if cand.name == ".cmcc-cloud-alive":
+            cand = cand.parent
+    # Never spawn with package/source tree as cwd (shadowing risk).
+    try:
+        if cand.resolve() == Path("/app").resolve():
+            cand = Path(os.environ.get("HOME") or "/tmp")
+            if cand.resolve() == Path("/app").resolve():
+                cand = Path("/tmp")
+    except OSError:
+        cand = Path("/tmp")
+    try:
+        cand.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        # Last resort: system temp still beats a missing hard-coded /data.
+        cand = Path(os.environ.get("TMPDIR") or os.environ.get("TEMP") or "/tmp")
+        cand.mkdir(parents=True, exist_ok=True)
+    return str(cand)
+
+
 def _redact_line(line: str) -> str:
     """Strip obvious secret-ish tokens from log lines (never echo passwords)."""
     low = line.lower()
@@ -318,13 +355,14 @@ class SubprocessBackend:
         try:
             # HARD_GATE#870: never inherit a cwd that shadows site-packages with
             # stale /app/cmcc_cloud_alive (python -m prefers cwd first).
+            # cwd follows HOME/data-dir parent (mkdir); not hard-coded /data.
             self._proc = subprocess.Popen(
                 cmd,
                 stdout=log_f,
                 stderr=subprocess.STDOUT,
                 stdin=subprocess.DEVNULL,
                 start_new_session=True,
-                cwd="/data",
+                cwd=_spawn_cwd(),
                 env=self._child_env(),
             )
         except Exception as e:
